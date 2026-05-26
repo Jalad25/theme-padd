@@ -363,8 +363,8 @@ function formatZodError(error: z.ZodError, raw: unknown): string {
     // Break if node or piece doesn't exist
     if (!node || typeof node !== "object" || !(piece in (node as Record<string, unknown>))) break;
     node = (node as Record<string, unknown>)[piece as string];
-    if (node && typeof node === "object" && "id" in node && typeof (node as { id: unknown }).id === "string") {
-      id = (node as { id: string }).id;
+    if (node && typeof node === "object" && "id" in node && typeof node.id === "string") {
+      id = node.id;
       // Section has inputFields
       // InputField has type
       if ("inputFields" in node) context = "section";
