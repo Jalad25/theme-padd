@@ -1,0 +1,23 @@
+title: "[Show & Tell]: "
+labels: ["show-and-tell"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Share how you're using Theme PADD! Theme tweaks you've made, screenshots of your customized themes, theme.css settings specs you've authored, or anything else you'd like to show off.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What are you sharing?
+      description: A quick summary of what you've built or how you're using the plugin.
+    validations:
+      required: true
+
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: Screenshots, settings spec fragments, theme names, or step-by-step explanations welcome.
+    validations:
+      required: false

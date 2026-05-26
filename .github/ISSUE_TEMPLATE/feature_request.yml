@@ -1,0 +1,66 @@
+name: Feature request
+description: Suggest a new feature or improvement.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an idea! Please describe the problem you're trying to solve, not just the solution you have in mind. That gives the most flexibility to find a good fit.
+
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Prerequisites
+      options:
+        - label: I have searched [existing issues](../issues?q=is%3Aissue) and [discussions](../discussions) and this has not already been requested.
+          required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Which area does this affect?
+      description: Pick the part of the plugin you have in mind. Pick all that apply.
+      multiple: true
+      options:
+        - Settings tab UI (how themes and their settings are rendered)
+        - Settings spec (new input types, new spec fields)
+        - Theme settings application to the DOM
+        - Loading / fetching a theme's settings.json
+        - Error reporting for theme authors or users
+        - Other / not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the user-facing problem or limitation you've run into. Concrete examples help.
+      placeholder: I'm trying to do X, but currently the plugin only supports Y, which means...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How would you like this to work? UI sketches, example settings.json fragments, or settings tab mockups are welcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any workarounds you've tried, or other approaches you considered and rejected.
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Anything else that helps explain the request, links to related plugins, screenshots, or example use cases.
+    validations:
+      required: false
