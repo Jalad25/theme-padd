@@ -1,0 +1,27 @@
+{
+  "name": "theme-padd",
+  "version": "0.1.0",
+  "description": "A PADD (Palette, Animation, Decoration, and Density) modifier for your themes.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -skipLibCheck && node esbuild.config.mjs production",
+    "lint": "eslint src"
+  },
+  "keywords": [],
+  "author": "Jalad",
+  "license": "GNU AGPLv3",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@typescript-eslint/parser": "^8.59.4",
+    "esbuild": "0.28.0",
+    "eslint": "^10.2.1",
+    "eslint-plugin-obsidianmd": "^0.3.0",
+    "obsidian": "latest",
+    "tslib": "2.6.3",
+    "typescript": "5.5.4"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  }
+}
