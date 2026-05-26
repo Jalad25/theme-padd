@@ -1,0 +1,119 @@
+/* #region Settings Tab */
+
+.theme-padd-theme-header {
+  display: flex; 
+  align-items: center; 
+  gap: 8px; 
+  cursor: pointer; 
+  padding: 8px 0; 
+  border-bottom: 1px solid var(--background-modifier-border);
+
+  .setting-item {
+    padding-top: 0;
+    padding-bottom: 0;
+    margin-bottom: 0;
+  }
+}
+
+.theme-padd-theme-body {
+  padding: 8px 0 16px 0;
+}
+
+.theme-padd-loading-container {
+  padding: 8px 0;
+
+  svg {
+    transform-origin: center;
+    animation: theme-padd-spin 1s linear infinite;
+  }
+}
+
+@keyframes theme-padd-spin {
+  to { transform: rotate(360deg); }
+}
+
+.theme-padd-theme-details {
+  margin-top: 24px; 
+  border: 1px solid var(--background-modifier-border); 
+  border-radius: 4px; 
+  padding: 8px;
+}
+
+.theme-padd-unsupported-list {
+  margin: 8px 0 0 0; 
+  padding-left: 1.5em;
+
+  li {
+    padding: 2px 0;
+  }
+}
+
+.theme-padd-active-theme-pill {
+  font-size: 0.75em; 
+  padding: 2px 8px; 
+  border-radius: 10px; 
+  background: var(--interactive-accent); 
+  color: var(--text-on-accent); 
+  margin-left: 8px;
+}
+
+.theme-padd-theme-summary {
+  cursor: pointer;
+}
+
+.theme-padd-error-block {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  padding: 12px;
+  margin: 8px 0;
+}
+
+.theme-padd-error-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.theme-padd-error-title {
+  font-weight: 600;
+  color: var(--text-error);
+}
+
+.theme-padd-error-description {
+  margin: 0 0 8px 0;
+  color: var(--text-muted);
+}
+
+.theme-padd-copy-button {
+  margin-left: auto;
+}
+
+.theme-padd-error-detail {
+  margin-top: 8px;
+}
+
+.theme-padd-error-detail-label {
+  font-size: 0.85em;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.theme-padd-error-detail-value {
+  font-family: monospace;
+  font-size: 0.85em;
+  background: var(--background-secondary);
+  border-radius: 4px;
+  padding: 8px;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* #endregion */
+
+/* Version */
+.theme-padd-version {
+	text-align: end;
+}
