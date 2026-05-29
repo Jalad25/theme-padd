@@ -1,7 +1,11 @@
 import { ThemeSettings } from "./ThemeSettings";
 import { LoadThemeSettingsResult, ThemeLoadError } from "./ThemeSettingsLoader";
 
+//#region Types/Objects/Interfaces
+
 export type SettingsError = { reason: "invalidSettings"; detail: string };
+
+//#endregion
 
 export class Theme {
   readonly name: string;
@@ -16,7 +20,7 @@ export class Theme {
   }
 
   // Apply result from theme settings loader
-  applyThemeSettingsLoadResult(result: LoadThemeSettingsResult, version: string): void {
+  applyThemeSettingsFromLoadResult(result: LoadThemeSettingsResult, version: string): void {
     // Theme supported, add settings
     if (result.ok) {
       this.applyRawSettings(result.raw, version);
@@ -39,7 +43,7 @@ export class Theme {
     this.loadError = result.error;
   }
 
-  // Validate raw settings
+  // Apply settings
   applyRawSettings(raw: unknown, version: string): void {
     const result = ThemeSettings.fromSettingsJSON(raw, version);
 
@@ -53,7 +57,7 @@ export class Theme {
     }
 
     // Migrate values from previous settings
-    result.settings.migrateInputValuesFrom(this.settings);
+    result.settings.migrateUserValuesFrom(this.settings);
 
     // Set settings
     this.settings = result.settings;

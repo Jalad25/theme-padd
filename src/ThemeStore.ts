@@ -18,12 +18,14 @@ export class ThemeStore {
 
   // Set active theme by name, ensuring at most one theme has isActive
   setActive(name: string | null): void {
-    for (const theme of this.themes.values()) {
-      theme.isActive = theme.name === name;
-    }
-    if (name && !this.themes.has(name)) {
-      const theme = this.upsert(name);
-      theme.isActive = true;
+    // Clear the currently active theme (if any) when switching away from it
+    const current = this.getActive();
+    if (current && current.name !== name) current.isActive = false;
+
+    // Activate the new theme
+    if (name) {
+      const theme = this.get(name);
+      if(theme) theme.isActive = true;
     }
   }
 

@@ -1,6 +1,6 @@
 import { Plugin } from "obsidian";
 import { ThemePADDSettingTab } from "./ThemePADDSettingTab";
-import { ThemeSettings } from "./ThemeSettings";
+import { InputValue, ThemeSettings } from "./ThemeSettings";
 import { ThemeSettingsLoader } from "./ThemeSettingsLoader";
 import { ThemeStore } from "./ThemeStore";
 import { Theme } from "./Theme";
@@ -21,20 +21,20 @@ interface CustomCss {
 
 //#region Constants
 
-export const CURRENT_SCHEMA_VERSION = 1; // For data.json schema, currently unused
+export const DATA_JSON_SCHEMA_VERSION = 1; // For data.json schema, currently unused
 
 export const DEFAULT_SETTINGS: ThemePADDSettings = {
-  schemaVersion: CURRENT_SCHEMA_VERSION,
+  schemaVersion: DATA_JSON_SCHEMA_VERSION,
   themes: {}
 };
 
 //#endregion
 
 export default class ThemePADDPlugin extends Plugin {
-  settings!: ThemePADDSettings;
+  pluginSettings!: ThemePADDSettings;
   themeStore: ThemeStore = new ThemeStore();
   themeSettingsLoader: ThemeSettingsLoader = new ThemeSettingsLoader(this);
-  private settingTab!: ThemePADDSettingTab;
+  private pluginSettingTab!: ThemePADDSettingTab;
 
   // Get name of currently active theme
   get activeThemeName(): string | null {
@@ -48,11 +48,11 @@ export default class ThemePADDPlugin extends Plugin {
 
   async onload() {
     // Plugin Settings
-    await this.loadSettings();
+    await this.loadPluginSettings();
 
     // Settings Tab
-    this.settingTab = new ThemePADDSettingTab(this.app, this);
-    this.addSettingTab(this.settingTab);
+    this.pluginSettingTab = new ThemePADDSettingTab(this.app, this);
+    this.addSettingTab(this.pluginSettingTab);
 
     // Load theme infomation/settings on workspace ready
     this.app.workspace.onLayoutReady(() => this.reconcileThemes());
@@ -70,9 +70,9 @@ export default class ThemePADDPlugin extends Plugin {
     this.activeThemeSettings?.clearFromDOM();
   }
 
-  //#region Settings
+  //#region Plugin Settings
 
-  async loadSettings() {
+  async loadPluginSettings() {
     const raw: unknown = await this.loadData();
 
     /* Remove properties from data.json object that are no longer used */
@@ -86,12 +86,12 @@ export default class ThemePADDPlugin extends Plugin {
       }
     }
 
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, filtered);
-    if (droppedAny) await this.saveSettings();
+    this.pluginSettings = Object.assign({}, DEFAULT_SETTINGS, filtered);
+    if (droppedAny) await this.savePluginSettings();
   }
 
-  async saveSettings() {
-    await this.saveData(this.settings);
+  async savePluginSettings() {
+    await this.saveData(this.pluginSettings);
   }
 
   //#endregion
@@ -107,12 +107,10 @@ export default class ThemePADDPlugin extends Plugin {
     // Get installed themes and active theme
     const installed: string[] = Object.keys(customCss.themes ?? {});
     const newActive: string | null = customCss.theme || null;
+    const activeChanged = newActive !== this.activeThemeName;
 
-    // Clear theme settings from DOM if not active, set new active
-    if (newActive !== this.activeThemeName) {
-      this.activeThemeSettings?.clearFromDOM();
-      this.themeStore.setActive(newActive);
-    }
+    // Clear the previous active's DOM
+    if (activeChanged) this.activeThemeSettings?.clearFromDOM();
 
     // Remove themes no longer installed
     for (const theme of [...this.themeStore.all()]) {
@@ -127,10 +125,14 @@ export default class ThemePADDPlugin extends Plugin {
       await this.loadThemeSettings(name, version);
     }
 
+    // Flip the active flag now that every installed theme is in the store
+    if (activeChanged) this.themeStore.setActive(newActive);
+
     // Apply settings for current active theme
     this.activeThemeSettings?.applyToDOM();
 
-    this.settingTab?.refresh();
+    // Refresh plugin settings tab
+    this.pluginSettingTab?.refresh();
   }
 
   // Load theme settings
@@ -141,7 +143,7 @@ export default class ThemePADDPlugin extends Plugin {
     if (theme.settings?.themeVersion === fetchedVersion) return;
 
     // data.json has settings at this version
-    const saved = this.settings.themes[themeName];
+    const saved = this.pluginSettings.themes[themeName];
     if (saved && saved.themeVersion === fetchedVersion) {
       theme.applyRawSettings(saved, fetchedVersion);
       await this.persistTheme(theme);
@@ -150,37 +152,38 @@ export default class ThemePADDPlugin extends Plugin {
 
     // Fetch raw settings, build theme settings object
     const result = await this.themeSettingsLoader.loadThemeSettings(themeName, fetchedVersion);
-    theme.applyThemeSettingsLoadResult(result, fetchedVersion);
+    theme.applyThemeSettingsFromLoadResult(result, fetchedVersion);
     await this.persistTheme(theme);
   }
 
   // Sync the theme's settings to data.json and apply to DOM if active
   private async persistTheme(theme: Theme): Promise<void> {
-    if (theme.settings) this.settings.themes[theme.name] = theme.settings;
-    else delete this.settings.themes[theme.name];
-    await this.saveSettings();
+    if (theme.settings) this.pluginSettings.themes[theme.name] = theme.settings;
+    else delete this.pluginSettings.themes[theme.name];
+    await this.savePluginSettings();
     if (theme.isActive) theme.settings?.applyToDOM();
   }
 
-  // Remove theme from registry and data.json
+  // Remove theme from store and data.json
   private async removeTheme(themeName: string): Promise<void> {
     this.themeStore.remove(themeName);
-    if (this.settings.themes[themeName]) {
-      delete this.settings.themes[themeName];
-      await this.saveSettings();
+    if (this.pluginSettings.themes[themeName]) {
+      delete this.pluginSettings.themes[themeName];
+      await this.savePluginSettings();
     }
   }
 
-  // Update a single input field value, persist, apply if active
-  async setInputFieldValue(themeName: string, inputFieldId: string, value: string): Promise<void> {
+  // Update a single user input value, persist, apply if active
+  async setUserInputValue(themeName: string, inputId: string, value: InputValue | undefined): Promise<void> {
     const theme = this.themeStore.get(themeName);
     if (!theme?.settings) return;
 
-    theme.settings.setInputFieldValue(inputFieldId, value);
+    // Set in theme settings object
+    theme.settings.setInputValue(inputId, value);
 
     // Persist to data.json
-    this.settings.themes[themeName] = theme.settings;
-    await this.saveSettings();
+    this.pluginSettings.themes[themeName] = theme.settings;
+    await this.savePluginSettings();
 
     // Apply theme settings
     if (theme.isActive) theme.settings.applyToDOM();

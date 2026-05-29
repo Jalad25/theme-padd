@@ -1,384 +1,290 @@
-import { z } from "zod";
-
-//#region Schemas (Zod)
-
-const ApplyVariable = z.object({ kind: z.literal("variable"), name: z.string() });
-const ApplyVariableValue = z.object({ kind: z.literal("variable"), name: z.string(), value: z.string() });
-const ApplyClass = z.object({ kind: z.literal("class") });
-const ApplyClassValue = z.object({ kind: z.literal("class"), value: z.string() });
-
-const SelectOptionSchema = z.object({ value: z.string(), label: z.string() });
-
-const ColorInputFieldSchema = z.object({
-  id: z.string(),
-  type: z.literal("color"),
-  label: z.string(),
-  description: z.string().optional(),
-  apply: ApplyVariable,
-  colorSpace: z.enum(["hex", "rgb", "hsl"]).optional(),
-  default: z.string().optional(),
-  value: z.string().optional(),
-}).superRefine((data, ctx) => { // Colorspace check of default
-  if (data.default === undefined) return;
-  const colorSpace = data.colorSpace ?? "hex";
-  let matchesColorSpace = false;
-  switch (colorSpace) {
-    case "hex": matchesColorSpace = matchesHex(data.default); break;
-    case "rgb": matchesColorSpace = matchesRGB(data.default); break;
-    case "hsl": matchesColorSpace = matchesHSL(data.default); break;
-  }
-  if (!matchesColorSpace) {
-    ctx.addIssue({
-      code: "custom",
-      path: ["default"],
-      message: `default "${data.default}" does not match colorSpace "${colorSpace}"`,
-    });
-  }
-});
-
-const TextInputFieldSchema = z.object({
-  id: z.string(),
-  type: z.literal("text"),
-  label: z.string(),
-  description: z.string().optional(),
-  apply: ApplyVariable,
-  default: z.string().optional(),
-  value: z.string().optional(),
-});
-
-const NumberInputFieldSchema = z.object({
-  id: z.string(),
-  type: z.literal("number"),
-  label: z.string(),
-  description: z.string().optional(),
-  apply: ApplyVariable,
-  default: z.string().optional(),
-  value: z.string().optional(),
-});
-
-const ToggleInputFieldSchema = z.object({
-  id: z.string(),
-  type: z.literal("toggle"),
-  label: z.string(),
-  description: z.string().optional(),
-  apply: z.union([ApplyClassValue, ApplyVariableValue]),
-  value: z.string().optional(),
-});
-
-const SelectInputFieldSchema = z.object({
-  id: z.string(),
-  type: z.literal("select"),
-  label: z.string(),
-  description: z.string().optional(),
-  options: z.array(SelectOptionSchema),
-  apply: ApplyClass,
-  default: z.string().optional(),
-  value: z.string().optional(),
-}).superRefine((data, ctx) => { // Check options contain default
-  if (data.default === undefined || data.default === "") return;
-  if (!data.options.some((o) => o.value === data.default)) {
-    ctx.addIssue({
-      code: "custom",
-      path: ["default"],
-      message: `default "${data.default}" does not match any option value`,
-    });
-  }
-});
-
-const InputFieldSchema = z.discriminatedUnion("type", [
-  ColorInputFieldSchema,
-  TextInputFieldSchema,
-  NumberInputFieldSchema,
-  ToggleInputFieldSchema,
-  SelectInputFieldSchema,
-]);
-
-const SectionSchema = z.object({
-  id: z.string(),
-  label: z.string(),
-  description: z.string().optional(),
-  inputFields: z.array(InputFieldSchema),
-});
-
-const ItemSchema = z.union([InputFieldSchema, SectionSchema]);
-
-const ThemeSettingsJSONSchema = z.object({
-  items: z.array(ItemSchema),
-}).superRefine((data, ctx) => { // Check unique ids
-  // Single pool of ids across sections and inputFields
-  // case-insensitive
-  const ids = new Set<string>();
-
-  const check = (id: string, path: (string | number)[]) => {
-    const key = id.toLowerCase();
-    if (ids.has(key)) {
-      ctx.addIssue({ code: "custom", path, message: "duplicate id" });
-      return;
-    }
-    ids.add(key);
-  };
-
-  for (let i = 0; i < data.items.length; i++) {
-    const item = data.items[i];
-    check(item.id, ["items", i, "id"]);
-    if ("inputFields" in item) {
-      for (let j = 0; j < item.inputFields.length; j++) {
-        check(item.inputFields[j].id, ["items", i, "inputFields", j, "id"]);
-      }
-    }
-  }
-});
-
-//#endregion
+import { Input, Item, parseThemeSettingsJSON } from "./ThemeSettingsSchema";
+export type { Action, Input, GroupItem, HeadingItem, Item, SettingItem } from "./ThemeSettingsSchema";
 
 //#region Types/Objects/Interfaces
 
-export type InputField = z.infer<typeof InputFieldSchema>;
-export type Section = z.infer<typeof SectionSchema>;
-export type Item = z.infer<typeof ItemSchema>;
+export type ThemedColorValue = { light: string; dark: string };
+export type InputValue = string | number | boolean | ThemedColorValue;
 
 export type FromSettingsJSONResult =
-{ ok: true; settings: ThemeSettings; }
-| { ok: false; reason: string; };
+  { ok: true; settings: ThemeSettings; }
+  | { ok: false; reason: string; };
 
 //#endregion
 
 export class ThemeSettings {
   items: Item[];
+  icon: string | undefined;
   themeVersion: string;
+  userValues: Map<string, InputValue>;
 
   constructor() {
     this.items = [];
+    this.icon = undefined;
     this.themeVersion = "";
+    this.userValues = new Map();
   }
 
   // Create theme settings from settings.json
   static fromSettingsJSON(raw: unknown, themeVersion: string): FromSettingsJSONResult {
-    const result = ThemeSettingsJSONSchema.safeParse(raw);
-    if (!result.success) {
-      return { ok: false, reason: formatZodError(result.error, raw) };
+    const result = parseThemeSettingsJSON(raw); // Validates schema, returns validated object
+    if (!result.ok) {
+      return { ok: false, reason: result.reason };
     }
 
     const settings = new ThemeSettings();
     settings.items = result.data.items;
+    settings.icon = result.data.icon;
     settings.themeVersion = themeVersion;
     return { ok: true, settings };
   }
 
-  // Find input field by id
-  findInputField(id: string): InputField | undefined {
-    for (const field of this.allInputFields()) {
-      if (field.id === id) return field;
+  //#region Inputs
+
+  // Find input by id
+  findInput(id: string): Input | undefined {
+    for (const input of this.allInputs()) {
+      if (input.id === id) return input;
     }
     return undefined;
   }
 
-  // Migrate user input values from a previous ThemeSettings instance
-  migrateInputValuesFrom(oldSettings: ThemeSettings | null): void {
-    // Return early if old settings do not exist
-    if (!oldSettings) return;
-
-    // Collect old user values keyed by inputField id
-    const oldValues = new Map<string, string>();
-    for (const field of oldSettings.allInputFields()) {
-      if (typeof field.value === "string") oldValues.set(field.id, field.value);
+  // Set value input by user
+  setInputValue(id: string, value: InputValue | undefined): void {
+    const input = this.findInput(id);
+    if (!input) return;
+    if (value === undefined || !valueMatchesInputShape(value, input)) {
+      this.clearUserValue(id);
+      return;
     }
+    if (isEmptyForInput(value, input) || matchesDefault(value, input)) {
+      this.clearUserValue(id);
+      return;
+    }
+    this.setUserValue(id, value);
+  }
 
-    // Apply old user values to this instance's matching inputFields
-    for (const field of this.allInputFields()) {
-      const value = oldValues.get(field.id);
-      if (value !== undefined) field.value = value;
+  // Iterate every input
+  private *allInputs(): IterableIterator<Input> {
+    for (const item of this.items) {
+      if (item.type === "heading") continue; // No inputs
+      if (item.type === "setting") {
+        yield* item.inputs;
+      } else { // group
+        for (const setting of item.items) {
+          yield* setting.inputs;
+        }
+      }
     }
   }
+
+  //#endregion
+
+  //#region User & Default Values
+
+  // Get the user's value for an input, or undefined if unset
+  getUserValue(id: string): InputValue | undefined {
+    return this.userValues.get(id);
+  }
+
+  // Set the user's value for an input
+  private setUserValue(id: string, value: InputValue): void {
+    this.userValues.set(id, value);
+  }
+
+  // Clear the user's value for an input
+  private clearUserValue(id: string): void {
+    this.userValues.delete(id);
+  }
+
+  // Get resolved value
+  effectiveValue(input: Input): InputValue | undefined {
+    const userValue = this.getUserValue(input.id);
+    if (userValue !== undefined) return userValue;
+
+    switch (input.type) {
+      case "text":
+      case "textarea":
+      case "dropdown":
+        return input.default; // Types: string | undefined
+      case "toggle":
+        return input.default; // Types: boolean | undefined
+      case "slider":
+        return input.default; // Types: number | undefined
+      case "color":
+        if (input.themed) {
+          if (input.defaultLight === undefined || input.defaultDark === undefined) return undefined;
+          return { light: input.defaultLight, dark: input.defaultDark }; // Types: string | undefined
+        }
+        return input.default; // Types: string | undefined
+    }
+  }
+
+  // Migrate user values from a previous ThemeSettings instance
+  migrateUserValuesFrom(oldSettings: ThemeSettings | null): void {
+    if (!oldSettings) return;
+
+    // Collect old user values keyed by input id
+    for (const newInput of this.allInputs()) {
+      const oldValue = oldSettings.userValues.get(newInput.id);
+      if (oldValue === undefined) continue;
+      if (!valueMatchesInputShape(oldValue, newInput)) continue;
+      this.setUserValue(newInput.id, oldValue);
+    }
+  }
+
+  //#endregion
 
   //#region Theme Settings Application
 
   // Apply this theme's settings to DOM
   applyToDOM(): void {
-    // CSS variables to apply, if any
-    const cssVariables: Record<string, string> = {};
+    for (const input of this.allInputs()) {
+      if (input.onChange === undefined) continue; // No action
 
-    // Iterate every inputField, whether top-level or inside a section
-    for (const inputField of this.allInputFields()) {
-      const value = inputField.value; // User set value
-
-      // Apply depending on kind
-      switch (inputField.apply.kind) {
-        case "class":
-          // Toggle applies provided value if user value is on
-          if (inputField.type === "toggle") activeDocument.body.toggleClass(inputField.apply.value, value === "on");
-          else if (inputField.type === "select") {
-            // Iterate select options to remove classes not chosen by user
-            const optionClasses = inputField.options.map((o) => o.value).filter(Boolean);
-            if (optionClasses.length) activeDocument.body.removeClasses(optionClasses);
-
-            // Add class chosen by user
-            if (value) activeDocument.body.addClass(value);
+      const value = this.effectiveValue(input);
+      switch (input.onChange.action) {
+        case "set-css-variable": // Set CSS Variable in DOM body
+          if (value === undefined) {
+            clearCssVariable(input.onChange.name, input.onChange.clearMode);
+          } else if (typeof value === "string") {
+            writeCssVariableToBody(input.onChange.name, value);
+          } else if (typeof value === "number") {
+            writeCssVariableToBody(input.onChange.name, String(value));
           }
           break;
-        case "variable":
-          // Toggle applies provided value if user value is on
-          if (inputField.type === "toggle") {
-            cssVariables[inputField.apply.name] = value === "on" ? inputField.apply.value : "";
+        case "set-css-variable-to": // Set CSS Variable in DOM body when toggled on
+          if (value === true) writeCssVariableToBody(input.onChange.name, input.onChange.value);
+          else clearCssVariable(input.onChange.name, input.onChange.clearMode);
+          break;
+        case "set-css-variable-themed": // Set CSS Variables (for light and dark) in DOM body
+          if (typeof value === "object" && value !== null && "light" in value && "dark" in value) {
+            writeCssVariableToBody(input.onChange.nameLight, value.light);
+            writeCssVariableToBody(input.onChange.nameDark, value.dark);
           } else {
-            // Set user value or default
-            cssVariables[inputField.apply.name] = value ?? inputField.default ?? "";
+            clearCssVariable(input.onChange.nameLight, input.onChange.clearMode);
+            clearCssVariable(input.onChange.nameDark, input.onChange.clearMode);
+          }
+          break;
+        case "toggle-class": // Set class in DOM body element when toggled on
+          activeDocument.body.toggleClass(input.onChange.class, value === true);
+          break;
+        case "set-class-from-list": // Set class from list in DOM DOM body element when selected
+          // Remove all classes in the list
+          activeDocument.body.removeClasses(input.onChange.classes);
+
+          // Set selected
+          if (typeof value === "string" && value !== "" && input.onChange.classes.includes(value)) {
+            activeDocument.body.addClass(value);
           }
           break;
       }
     }
-
-    // Set CSS variables to body
-    activeDocument.body.setCssProps(cssVariables);
   }
 
   // Remove this theme's settings from the DOM
   clearFromDOM(): void {
-    const cssVariables: Record<string, string> = {};
+    for (const input of this.allInputs()) {
+      if (input.onChange === undefined) continue;
 
-    // Iterate every inputField, whether top-level or inside a section
-    for (const inputField of this.allInputFields()) {
-      // Remove depending on kind
-      switch (inputField.apply.kind) {
-        case "class":
-          if (inputField.type === "toggle") activeDocument.body.removeClass(inputField.apply.value);
-          else if (inputField.type === "select") {
-            const optionClasses = inputField.options.map((o) => o.value).filter(Boolean);
-            if (optionClasses.length) activeDocument.body.removeClasses(optionClasses);
-          }
+      switch (input.onChange.action) {
+        case "set-css-variable":
+        case "set-css-variable-to":
+          clearCssVariable(input.onChange.name, input.onChange.clearMode);
           break;
-        case "variable":
-          cssVariables[inputField.apply.name] = "";
+        case "set-css-variable-themed":
+          clearCssVariable(input.onChange.nameLight, input.onChange.clearMode);
+          clearCssVariable(input.onChange.nameDark, input.onChange.clearMode);
+          break;
+        case "toggle-class":
+          activeDocument.body.removeClass(input.onChange.class);
+          break;
+        case "set-class-from-list":
+          activeDocument.body.removeClasses(input.onChange.classes);
           break;
       }
     }
-
-    // Set CSS variables to body
-    activeDocument.body.setCssProps(cssVariables);
   }
 
   //#endregion
-
-  // Update a single input field value
-  setInputFieldValue(fieldId: string, value: string): void {
-    const inputField = this.findInputField(fieldId);
-    if (!inputField) return;
-
-    if (value === "" || value == null) delete inputField.value; // No user set value
-    else if (inputField.type !== "toggle" && matchesDefault(inputField, value)) delete inputField.value; // Same as default, no user set value
-    else inputField.value = value; // Set user set value
-  }
-
-  // Walk every inputField
-  private *allInputFields(): IterableIterator<InputField> {
-    for (const item of this.items) {
-      if (itemIsSection(item)) {
-        yield* item.inputFields;
-      } else {
-        yield item;
-      }
-    }
-  }
 }
 
 //#region Utilities
 
-export function itemIsSection(item: Item): item is Section {
-  return "inputFields" in item;
-}
-
-// Check if user input value is the same as default
-function matchesDefault(inputField: Exclude<InputField, { type: "toggle" }>, userInputValue: string): boolean {
-  if (inputField.default === undefined) return false;
-  if (inputField.type === "color") return inputField.default.toLowerCase() === userInputValue.toLowerCase();
-  return inputField.default === userInputValue;
-}
-
-// Hex check
-function matchesHex(value: string): boolean {
-  const trimmed = value.trim();
-  if (trimmed.length !== 7 || trimmed[0] !== "#") return false;
-  const digits = trimmed.slice(1);
-  for (const ch of digits) {
-    if (!((ch >= "0" && ch <= "9") || (ch >= "a" && ch <= "f") || (ch >= "A" && ch <= "F"))) return false;
+// Check a value is "empty" for its input
+function isEmptyForInput(value: InputValue, input: Input): boolean {
+  switch (input.type) {
+    case "text":
+    case "textarea":
+    case "dropdown":
+      return value === "";
+    case "color":
+      if (input.themed) {
+        return typeof value === "object" && value !== null
+          && "light" in value && value.light === ""
+          && "dark"  in value && value.dark === "";
+      }
+      return value === "";
+    case "toggle":
+    case "slider":
+      return false; // booleans/numbers are never "empty"
   }
-  return true;
 }
 
-// RGB check
-function matchesRGB(value: string): boolean {
-  const trimmed = value.trim().toLowerCase();
-  if (!trimmed.startsWith("rgb(") || !trimmed.endsWith(")")) return false;
-  const inner = trimmed.slice(4, -1);
-  const parts = inner.split(",");
-  if (parts.length !== 3) return false;
-  for (const part of parts) {
-    const n = parseDigits(part);
-    if (n === null || n < 0 || n > 255) return false;
+// Check a value equals the input's declared default 
+function matchesDefault(value: InputValue, input: Input): boolean {
+  switch (input.type) {
+    case "text":
+    case "textarea":
+    case "dropdown":
+      return input.default !== undefined && value === input.default;
+    case "slider":
+      return value === input.default;
+    case "toggle":
+      // If a default is declared, compare. Otherwise treat false as the implicit default
+      if (input.default !== undefined) return value === input.default;
+      return value === false;
+    case "color":
+      if (input.themed) {
+        if (input.defaultLight === undefined || input.defaultDark === undefined) return false;
+        return typeof value === "object" && value !== null
+          && "light" in value && value.light.toLowerCase() === input.defaultLight.toLowerCase()
+          && "dark"  in value && value.dark.toLowerCase()  === input.defaultDark.toLowerCase();
+      }
+      return typeof value === "string" && input.default !== undefined && value.toLowerCase() === input.default.toLowerCase();
   }
-  return true;
 }
 
-// HSL check
-function matchesHSL(value: string): boolean {
-  const trimmed = value.trim().toLowerCase();
-  if (!trimmed.startsWith("hsl(") || !trimmed.endsWith(")")) return false;
-  const inner = trimmed.slice(4, -1);
-  const parts = inner.split(",");
-  if (parts.length !== 3) return false;
-
-  const h = parseDigits(parts[0]);
-  if (h === null || h < 0 || h > 360) return false;
-
-  for (const part of parts.slice(1)) {
-    const p = part.trim();
-    if (!p.endsWith("%")) return false;
-    const n = parseDigits(p.slice(0, -1));
-    if (n === null || n < 0 || n > 100) return false;
+// Check that a stored user value still matches the new input's expected shape
+function valueMatchesInputShape(value: InputValue, input: Input): boolean {
+  switch (input.type) {
+    case "text":
+    case "textarea":
+    case "dropdown":
+      return typeof value === "string";
+    case "toggle":
+      return typeof value === "boolean";
+    case "slider":
+      return typeof value === "number";
+    case "color":
+      if (input.themed) {
+        return typeof value === "object" && value !== null
+          && "light" in value && typeof value.light === "string"
+          && "dark" in value && typeof value.dark === "string";
+      }
+      return typeof value === "string";
   }
-  return true;
 }
 
-// Parse a single integer, rejecting empty strings, decimals, or non-digit characters
-function parseDigits(raw: string): number | null {
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return null;
-  for (const ch of trimmed) {
-    if (ch < "0" || ch > "9") return null;
-  }
-  return Number(trimmed);
+// Write a CSS custom property to the document body
+function writeCssVariableToBody(name: string, value: string): void {
+  activeDocument.body.style.setProperty(name, value);
 }
 
-// Format a Zod error into a single line, id aware message
-function formatZodError(error: z.ZodError, raw: unknown): string {
-  // Get issue with path
-  const issue = error.issues[0];
-  const path = issue.path;
-
-  // Find id
-  let node: unknown = raw;
-  let id: string | undefined;
-  let context: "inputField" | "section" | undefined;
-  for (const piece of path) {
-    // Break if node or piece doesn't exist
-    if (!node || typeof node !== "object" || !(piece in (node as Record<string, unknown>))) break;
-    node = (node as Record<string, unknown>)[piece as string];
-    if (node && typeof node === "object" && "id" in node && typeof node.id === "string") {
-      id = node.id;
-      // Section has inputFields
-      // InputField has type
-      if ("inputFields" in node) context = "section";
-      else if ("type" in node) context = "inputField";
-    }
-  }
-
-  // Build the prefix
-  let prefix: string;
-  if (id && context) prefix = `${context} "${id}"`;
-  else if (path.length > 0) prefix = `at items${path.map(p => typeof p === "number" ? `[${p}]` : `.${String(p)}`).join("")}`;
-  else prefix = "settings";
-
-  return `Invalid settings: ${prefix} ${issue.message}`;
+// Clear a CSS custom property from the document body
+function clearCssVariable(name: string, clearMode: "empty" | "remove" | undefined): void {
+  if (clearMode === "remove") activeDocument.body.style.removeProperty(name); // Clears variable from body
+  else activeDocument.body.style.setProperty(name, ""); // Sets varible to ""
 }
 
 //#endregion

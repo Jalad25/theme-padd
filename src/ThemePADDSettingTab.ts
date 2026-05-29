@@ -4,12 +4,19 @@ import {
   PluginSettingTab,
   setIcon,
   Setting,
-  ColorComponent
+  ColorComponent,
+  DropdownComponent,
+  SliderComponent,
+  TextAreaComponent,
+  TextComponent,
+  ToggleComponent
 } from "obsidian";
 import ThemePADDPlugin from "./main";
 import { ThemeLoadError } from "./ThemeSettingsLoader";
 import { SettingsError } from "./Theme";
-import { InputField, itemIsSection, ThemeSettings } from "./ThemeSettings";
+import { GroupItem, Input, InputValue, SettingItem, ThemedColorValue, ThemeSettings } from "./ThemeSettings";
+
+const COLOR_FALLBACK = "#000000";
 
 export class ThemePADDSettingTab extends PluginSettingTab {
   plugin: ThemePADDPlugin;
@@ -62,7 +69,7 @@ export class ThemePADDSettingTab extends PluginSettingTab {
 
     // Iterate supported themes and render their block
     for (const themeName of supported) {
-      this.renderTheme(containerEl, themeName);
+      this.renderThemeSection(containerEl, themeName);
     }
 
     // Render unsupported section of themes
@@ -71,10 +78,12 @@ export class ThemePADDSettingTab extends PluginSettingTab {
     }
   }
 
-  //#region Render Utilities 
+  //#region Render Utilities
 
-  // Render theme block
-  private renderTheme(element: HTMLElement, themeName: string): void {
+  //#region Supported Theme
+
+  // Render theme section of settings
+  private renderThemeSection(element: HTMLElement, themeName: string): void {
     const theme = this.plugin.themeStore.get(themeName);
     if (!theme) return;
     const isActive = theme.isActive;
@@ -82,13 +91,19 @@ export class ThemePADDSettingTab extends PluginSettingTab {
     const themeErrors = theme.loadError ?? theme.settingsError;
     const isExpanded = this.expandedThemes.has(themeName);
 
-    // Theme block container
+    // Theme container
     const themeBlock = element.createDiv({ cls: "theme-padd-theme-block" });
 
     // Header
     const themeHeader = themeBlock.createDiv({ cls: "theme-padd-theme-header" });
     setIcon(themeHeader, isExpanded ? "chevron-down" : "chevron-right");
-    new Setting(themeHeader).setName(`${themeName}`).setHeading();
+    const headerSetting = new Setting(themeHeader).setName(`${themeName}`).setHeading();
+    if (themeSettings?.icon) {
+      const wrapper = createSpan({ cls: "theme-padd-theme-icon" });
+      setIcon(wrapper, themeSettings.icon);
+      if (wrapper.childElementCount === 0) wrapper.setText(themeSettings.icon);
+      headerSetting.nameEl.prepend(wrapper);
+    }
     if (isActive) themeHeader.createSpan({ text: "Active", cls: "theme-padd-active-theme-pill" });
 
     // Event toggle expand/collapse of theme block
@@ -117,135 +132,247 @@ export class ThemePADDSettingTab extends PluginSettingTab {
       return;
     }
 
-    // Render settings
+    // Render theme settings
     this.renderThemeSettings(themeBody, themeName, themeSettings);
   }
 
   // Render theme settings
   private renderThemeSettings(element: HTMLElement, themeName: string, themeSettings: ThemeSettings): void {
-    // Iterate items in authoring order
     for (const item of themeSettings.items) {
-      // Set section
-      if (itemIsSection(item)) {
-        // Set section label and description
-        const sectionElement = new Setting(element).setName(item.label).setHeading();
-        if (item.description) {
-          sectionElement.setDesc(item.description);
-        }
-
-        // Iterate section inputFields and render
-        for (const inputField of item.inputFields) {
-          this.renderInputField(element, themeName, inputField);
-        }
-      } else { // Set inputField
-        this.renderInputField(element, themeName, item);
+      switch (item.type) {
+        case "heading":
+          this.renderHeading(element, item.name, item.desc);
+          break;
+        case "setting":
+          this.renderSetting(element, themeName, themeSettings, item);
+          break;
+        case "group":
+          this.renderGroup(element, themeName, themeSettings, item);
+          break;
       }
     }
   }
 
-  // Render input field
-  private renderInputField(element: HTMLElement, themeName: string, inputField: InputField): void {
-    const settingElement = new Setting(element).setName(inputField.label);
-    if (inputField.description) settingElement.setDesc(inputField.description);
+  // Render a heading row
+  private renderHeading(element: HTMLElement, name: string, desc?: string): void {
+    const setting = new Setting(element).setName(name).setHeading();
+    if (desc) setting.setDesc(desc);
+  }
 
-    // Render inputs
-    switch (inputField.type) {
-      case "color":
-        let colorPicker: ColorComponent | null = null;
-        let suppressOnChange = false;
-        settingElement.addColorPicker((c) => {
-          colorPicker = c;
-          suppressOnChange = true;
-          c.setValue(inputField.value ?? inputField.default ?? "#000000");
-          suppressOnChange = false;
-          c.onChange(async (value) => {
-              if (suppressOnChange) return;
-              await this.plugin.setInputFieldValue(themeName, inputField.id, value);
-           });
-        })
-        .addExtraButton((b) => { // Reseet color picker to blank
-          b.setIcon("rotate-ccw")
-           .setTooltip("Reset (use theme default)")
-           .onClick(async () => {
-              suppressOnChange = true;
-              await this.plugin.setInputFieldValue(themeName, inputField.id, "");
-              colorPicker?.setValue(inputField.default ?? "#000000");
-              suppressOnChange = false;
-           });
-        });
-        break;
+  // Render a group, heading with settings
+  private renderGroup(element: HTMLElement, themeName: string, themeSettings: ThemeSettings, group: GroupItem): void {
+    const groupEl = element.createDiv({ cls: "theme-padd-group" });
+    this.renderHeading(groupEl, group.heading);
+    for (const item of group.items) {
+      this.renderSetting(groupEl, themeName, themeSettings, item);
+    }
+  }
+
+  // Render a setting row
+  private renderSetting(element: HTMLElement, themeName: string, themeSettings: ThemeSettings, item: SettingItem): void {
+    const setting = new Setting(element).setName(item.name);
+    if (item.desc) setting.setDesc(item.desc);
+    if (item.tooltip) setting.setTooltip(item.tooltip);
+
+    for (const input of item.inputs) {
+      this.renderInput(setting, themeName, themeSettings, input);
+    }
+  }
+
+  // Render a single input into an existing Setting row, with reset button
+  private renderInput(setting: Setting, themeName: string, themeSettings: ThemeSettings, input: Input): void {
+    const value = themeSettings.effectiveValue(input);
+
+    switch (input.type) {
       case "text":
-        settingElement.addText((t) => {
-          t.setValue(inputField.value ?? inputField.default ?? "")
-           .onChange(async (value) => {
-            await this.plugin.setInputFieldValue(themeName, inputField.id, value);
-          });
-        });
+        this.renderTextInput(setting, themeName, input, value);
         break;
-      case "number":
-        settingElement.addText((n) => {
-          n.inputEl.type = "number";
-          n.setValue(inputField.value ?? inputField.default ?? "")
-           .onChange(async (value) => {
-              await this.plugin.setInputFieldValue(themeName, inputField.id, value);
-           });
-        });
+      case "textarea":
+        this.renderTextArea(setting, themeName, input, value);
         break;
       case "toggle":
-        settingElement.addToggle((t) => {
-          t.setValue(inputField.value === "on")
-           .onChange(async (value) => {
-              await this.plugin.setInputFieldValue(themeName, inputField.id, value ? "on" : "off");
-           });
-        });
+        this.renderToggle(setting, themeName, input, value);
         break;
-      case "select":
-        settingElement.addDropdown((d) => {
-          // Check if default value was added
-          // If not, add one by default
-          const hasDefaultOption = inputField.options.some((o) => o.value === "");
-          if (!hasDefaultOption) d.addOption("", "Default");
-
-          for (const option of inputField.options) d.addOption(option.value, option.label);
-          d.setValue(inputField.value ?? inputField.default ?? "")
-           .onChange(async (value) => {
-              await this.plugin.setInputFieldValue(themeName, inputField.id, value);
-           });
-        });
+      case "dropdown":
+        this.renderDropdown(setting, themeName, input, value);
+        break;
+      case "color":
+        if (input.themed) {
+          this.renderThemedColor(setting, themeName, input, value);
+        } else {
+          this.renderSingleColor(setting, themeName, input, value);
+        }
+        break;
+      case "slider":
+        this.renderSlider(setting, themeName, input, value);
         break;
     }
   }
 
-  // Render unsupported themes
-  private renderUnsupportedGroup(parent: HTMLElement, themeNames: string[]): void {
-    // Detail element to allow expanding/collapsing
-    const details = parent.createEl("details", { cls: "theme-padd-theme-details" });
+  //#region Inputs
 
-    // Detail summary
-    details.createEl("summary", { 
-      text: `Themes without Theme PADD support (${themeNames.length})`, 
-      cls: "theme-padd-theme-summary" 
+  // Render text input with reset button
+  private renderTextInput(setting: Setting, themeName: string, input: Extract<Input, { type: "text" }>, value: InputValue | undefined): void {
+    let control: TextComponent | null = null;
+    setting.addText((t) => {
+      control = t;
+      if (input.placeholder) t.setPlaceholder(input.placeholder);
+      t.setValue(typeof value === "string" ? value : "")
+       .onChange(async (value) => {
+          await this.plugin.setUserInputValue(themeName, input.id, value);
+       });
     });
-
-    // Message
-    details.createEl("p", {
-      text: "These themes don't declare a @themepadd directive in their theme.css. Their authors haven't added theme padd support, so there's nothing to configure here.",
-      cls: "setting-item-description",
+    this.addResetButton(setting, themeName, input, () => {
+      if (control && input.default !== undefined) control.setValue(input.default);
+      else if (control) control.setValue("");
     });
-
-    // List unsupported themes
-    const list = details.createEl("ul", { cls: "theme-padd-unsupported-list" });
-    const activeName = this.plugin.activeThemeName;
-    for (const name of themeNames) {
-      const li = list.createEl("li");
-      li.createSpan({ text: name });
-
-      // Show if theme is currently active
-      if (name === activeName) {
-        li.createSpan({ text: "Active", cls: "theme-padd-active-theme-pill" });
-      }
-    }
   }
+
+  // Render text area input with reset button
+  private renderTextArea(setting: Setting, themeName: string, input: Extract<Input, { type: "textarea" }>, value: InputValue | undefined): void {
+    let control: TextAreaComponent | null = null;
+    setting.addTextArea((t) => {
+      control = t;
+      if (input.placeholder) t.setPlaceholder(input.placeholder);
+      t.setValue(typeof value === "string" ? value : "");
+      t.onChange(async (value) => {
+        await this.plugin.setUserInputValue(themeName, input.id, value);
+      });
+    });
+    this.addResetButton(setting, themeName, input, () => {
+      if (control && input.default !== undefined) control.setValue(input.default);
+      else if (control) control.setValue("");
+    });
+  }
+
+  // Render toggle input with reset button
+  private renderToggle(setting: Setting, themeName: string, input: Extract<Input, { type: "toggle" }>, value: InputValue | undefined): void {
+    let control: ToggleComponent | null = null;
+    setting.addToggle((t) => {
+      control = t;
+      t.setValue(typeof value === "boolean" ? value : false);
+      t.onChange(async (value) => {
+        await this.plugin.setUserInputValue(themeName, input.id, value);
+      });
+    });
+    this.addResetButton(setting, themeName, input, () => {
+      if (control) control.setValue(input.default ?? false);
+    });
+  }
+
+  // Render dropdown input with reset button
+  private renderDropdown(setting: Setting, themeName: string, input: Extract<Input, { type: "dropdown" }>, value: InputValue | undefined): void {
+    let control: DropdownComponent | null = null;
+    setting.addDropdown((d) => {
+      control = d;
+      for (const option of input.options) d.addOption(option.value, option.label);
+      d.setValue(typeof value === "string" ? value : "");
+      d.onChange(async (value) => {
+        await this.plugin.setUserInputValue(themeName, input.id, value);
+      });
+    });
+    this.addResetButton(setting, themeName, input, () => {
+      if (control && input.default !== undefined) control.setValue(input.default);
+    });
+  }
+
+  // Render single color input with reset button
+  private renderSingleColor(setting: Setting, themeName: string, input: Extract<Input, { type: "color" }>, value: InputValue | undefined): void {
+    let control: ColorComponent | null = null;
+    setting.addColorPicker((c) => {
+      control = c;
+      c.setValue(typeof value === "string" && value !== "" ? value : COLOR_FALLBACK);
+      c.onChange(async (value) => {
+        await this.plugin.setUserInputValue(themeName, input.id, value);
+      });
+    });
+    this.addResetButton(setting, themeName, input, () => {
+      if (control) control.setValue(input.default ?? COLOR_FALLBACK);
+    });
+  }
+
+  // Render two (one for each theme mode) color input with reset buttons
+  private renderThemedColor(setting: Setting, themeName: string, input: Extract<Input, { type: "color" }>, value: InputValue | undefined): void {
+    const initial = (typeof value === "object" && value !== null && "light" in value && "dark" in value)
+                      ? { light: typeof value.light === "string" && value.light !== "" ? value.light : COLOR_FALLBACK, dark: typeof value.dark === "string" && value.dark !== "" ? value.dark : COLOR_FALLBACK }
+                      : { light: COLOR_FALLBACK, dark: COLOR_FALLBACK };
+
+    let lightControl: ColorComponent | null = null;
+    let darkControl: ColorComponent | null = null;
+
+    setting.addColorPicker((c) => {
+      lightControl = c;
+      c.setValue(initial.light);
+      c.onChange(async (value) => {
+        const next: ThemedColorValue = { light: value, dark: darkControl?.getValue() ?? initial.dark };
+        await this.plugin.setUserInputValue(themeName, input.id, next);
+      });
+    });
+    setting.addColorPicker((c) => {
+      darkControl = c;
+      c.setValue(initial.dark);
+      c.onChange(async (value) => {
+        const next: ThemedColorValue = { light: lightControl?.getValue() ?? initial.light, dark: value };
+        await this.plugin.setUserInputValue(themeName, input.id, next);
+      });
+    });
+
+    this.addResetButton(setting, themeName, input, () => {
+      lightControl?.setValue(input.defaultLight ?? COLOR_FALLBACK);
+      darkControl?.setValue(input.defaultDark ?? COLOR_FALLBACK);
+    });
+  }
+
+  // Render slider input with reset button
+  private renderSlider(setting: Setting, themeName: string, input: Extract<Input, { type: "slider" }>, value: InputValue | undefined): void {
+    let control: SliderComponent | null = null;
+    setting.addSlider((s) => {
+      control = s;
+      s.setLimits(input.min, input.max, input.step);
+      s.setInstant(true);
+      s.setDynamicTooltip();
+      s.setValue(typeof value === "number" ? value : input.min);
+      s.onChange(async (value) => {
+        await this.plugin.setUserInputValue(themeName, input.id, value);
+      });
+    });
+    this.addResetButton(setting, themeName, input, () => {
+      if (control && input.default !== undefined) control.setValue(input.default);
+    });
+  }
+
+  // Add reset button to setting input
+  private addResetButton(setting: Setting, themeName: string, input: Input, restoreControl: () => void): void {
+    // Return if there are no defaults set
+    switch (input.type) {
+      case "text":
+      case "textarea":
+      case "dropdown":
+      case "toggle":
+      case "slider":
+        if (input.default === undefined) return;
+        break;
+      case "color":
+        if (input.themed) {
+          if (input.defaultDark === undefined || input.defaultLight === undefined) return;
+        } else if (input.default === undefined) return;
+    }
+
+    const userValue = this.plugin.themeStore.get(themeName)?.settings?.getUserValue(input.id);
+    if (userValue === undefined) return; // Return if user hasn't overridden
+
+    setting.addExtraButton((b) => {
+      b.setIcon("rotate-ccw")
+       .setTooltip("Reset (use theme default)")
+       .onClick(async () => {
+         await this.plugin.setUserInputValue(themeName, input.id, undefined);
+         restoreControl();
+         this.display(); // Rerender so the reset button disappears
+       });
+    });
+  }
+
+  //#endregion
 
   // Render theme errors
   private renderThemeErrors(element: HTMLElement, themeName: string, error: ThemeLoadError | SettingsError): void {
@@ -266,18 +393,7 @@ export class ThemePADDSettingTab extends PluginSettingTab {
 
     const block = element.createDiv({ cls: "theme-padd-error-block" });
 
-    new Setting(block).setName(titles[error.reason])
-                      .setHeading()
-                      .setDesc(descriptions[error.reason])
-                      .addButton((b) => {
-                        b.setButtonText("Copy")
-                         .onClick(async () => {
-                          await navigator.clipboard.writeText(plainText);
-                          new Notice("Copied error details");
-                        })
-                      });
-
-    // Labeled monospace details for the failures that carry one
+    // Labeled details for the failures that carry one
     const details: { label: string; value: string }[] = [];
     if (error.reason === "fetchFailed") {
       details.push({ label: "URL", value: error.url });
@@ -286,29 +402,67 @@ export class ThemePADDSettingTab extends PluginSettingTab {
       details.push({ label: "Detail", value: error.detail });
     }
 
-    for (const { label, value } of details) {
-      const row = block.createDiv({ cls: "theme-padd-error-detail" });
-      row.createDiv({ cls: "theme-padd-error-detail-label", text: label });
-      row.createEl("pre", { cls: "theme-padd-error-detail-value", text: value });
-    }
-
-    // Build a plain-text version of the whole block for sharing
-    const plainText = this.buildErrorPlainText(themeName, titles[error.reason], descriptions[error.reason], details);
-  }
-
-  // Build a plain-text representation of an error block for copy-to-clipboard
-  private buildErrorPlainText(themeName: string, title: string, description: string, details: { label: string; value: string }[]): string {
+    // Build list of errors
     const lines: string[] = [];
     lines.push(`Theme: ${themeName}`);
-    lines.push(`Error: ${title}`);
+    lines.push(`Error: ${titles[error.reason]}`);
     lines.push("");
-    lines.push(description);
+    lines.push(descriptions[error.reason]);
     for (const { label, value } of details) {
       lines.push("");
       lines.push(`${label}:`);
       lines.push(value);
     }
-    return lines.join("\n");
+
+    new Setting(block).setName(titles[error.reason])
+                      .setHeading()
+                      .setDesc(descriptions[error.reason])
+                      .addButton((b) => {
+                        b.setButtonText("Copy")
+                         .onClick(async () => {
+                          await navigator.clipboard.writeText(lines.join("\n"));
+                          new Notice("Copied error details");
+                        })
+                      });
+
+    for (const { label, value } of details) {
+      const row = block.createDiv({ cls: "theme-padd-error-detail" });
+      row.createDiv({ cls: "theme-padd-error-detail-label", text: label });
+      row.createEl("pre", { cls: "theme-padd-error-detail-value", text: value });
+    }
+  }
+
+  //#endregion
+
+  // Render unsupported themes
+  private renderUnsupportedGroup(parent: HTMLElement, themeNames: string[]): void {
+    // Detail element to allow expanding/collapsing
+    const details = parent.createEl("details", { cls: "theme-padd-theme-details" });
+
+    // Detail summary
+    details.createEl("summary", {
+      text: `Themes without Theme PADD support (${themeNames.length})`,
+      cls: "theme-padd-theme-summary"
+    });
+
+    // Message
+    details.createEl("p", {
+      text: "These themes don't declare a @themepadd directive in their theme.css. Their authors haven't added theme padd support, so there's nothing to configure here.",
+      cls: "setting-item-description",
+    });
+
+    // List unsupported themes
+    const list = details.createEl("ul", { cls: "theme-padd-unsupported-list" });
+    const activeName = this.plugin.activeThemeName;
+    for (const name of themeNames) {
+      const li = list.createEl("li");
+      li.createSpan({ text: name });
+
+      // Show if theme is currently active
+      if (name === activeName) {
+        li.createSpan({ text: "Active", cls: "theme-padd-active-theme-pill" });
+      }
+    }
   }
 
   //#endregion
