@@ -375,7 +375,7 @@ export class ThemePADDSettingTab extends PluginSettingTab {
 
     let buttonEl: HTMLElement | null = null;
     const setVisible = (visible: boolean) => { // visible if user has changed value
-      if (buttonEl) buttonEl.style.display = visible ? "" : "none";
+      buttonEl?.toggleVisibility(visible);
     };
 
     setting.addExtraButton((b) => {

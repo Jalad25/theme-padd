@@ -288,13 +288,13 @@ function valueMatchesInputShape(value: InputValue, input: Input): boolean {
 
 // Write a CSS custom property to the document body
 function writeCssVariableToBody(name: string, value: string): void {
-  activeDocument.body.style.setProperty(name, value);
+  activeDocument.body.setCssProps({ [name]: value });
 }
 
 // Clear a CSS custom property from the document body
 function clearCssVariable(name: string, clearMode: "empty" | "remove" | undefined): void {
-  if (clearMode === "remove") activeDocument.body.style.removeProperty(name); // Clears variable from body
-  else activeDocument.body.style.setProperty(name, ""); // Sets varible to ""
+  if (clearMode === "remove") activeDocument.body.style.removeProperty(name); // setCssProps cannot remove a property
+  else activeDocument.body.setCssProps({ [name]: "" }); // Sets variable to ""
 }
 
 //#endregion
