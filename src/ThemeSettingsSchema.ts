@@ -43,21 +43,21 @@ const ACTION_COMPATIBILITY: Record<Action["action"], readonly InputType[]> = {
 const SetCssVariable = z.object({
   action: z.literal("set-css-variable"),
   name: z.string(),
-  clearMode: z.enum(["empty", "remove"]).optional() // defaults to "empty"
+  clearMode: z.enum(["remove", "empty"]).optional() // defaults to "remove"
 });
 
 const SetCssVariableTo = z.object({
   action: z.literal("set-css-variable-to"),
   name: z.string(),
   value: z.string(),
-  clearMode: z.enum(["empty", "remove"]).optional()
+  clearMode: z.enum(["remove", "empty"]).optional() // defaults to "remove"
 });
 
 const SetCssVariableThemed = z.object({
   action: z.literal("set-css-variable-themed"),
   nameLight: z.string(),
   nameDark: z.string(),
-  clearMode: z.enum(["empty", "remove"]).optional()
+  clearMode: z.enum(["remove", "empty"]).optional() // defaults to "remove"
 });
 
 const ToggleClass = z.object({
@@ -253,7 +253,8 @@ const SettingItemSchema = z.object({
 
 const GroupItemSchema = z.object({
   type: z.literal("group"),
-  heading: z.string(),
+  name: z.string(),
+  desc: z.string().optional(),
   items: z.array(SettingItemSchema)
 });
 
@@ -267,10 +268,18 @@ const ItemSchema = z.discriminatedUnion("type", [
 
 //#region Root
 
+const InputValueSchema = z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.object({ light: z.string(), dark: z.string() })
+]);
+
 const ThemeSettingsJSONSchema = z.object({
   schemaVersion: z.literal(SETTINGS_JSON_SCHEMA_VERSION),
   icon: z.string().optional(),
-  items: z.array(ItemSchema)
+  items: z.array(ItemSchema),
+  userValues: z.record(z.string(), InputValueSchema).default({})
 }).superRefine((data, ctx) => { // Check unique ids and actions compatible with input
   type ActionSite = { action: z.infer<typeof ActionSchema>, input: z.infer<typeof InputSchema>, path: (string | number)[] };
   const inputIds = new Set<string>();

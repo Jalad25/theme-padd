@@ -162,7 +162,7 @@ export class ThemePADDSettingTab extends PluginSettingTab {
   // Render a group, heading with settings
   private renderGroup(element: HTMLElement, themeName: string, themeSettings: ThemeSettings, group: GroupItem): void {
     const groupEl = element.createDiv({ cls: "theme-padd-group" });
-    this.renderHeading(groupEl, group.heading);
+    this.renderHeading(groupEl, group.name, group.desc);
     for (const item of group.items) {
       this.renderSetting(groupEl, themeName, themeSettings, item);
     }
@@ -214,15 +214,17 @@ export class ThemePADDSettingTab extends PluginSettingTab {
   // Render text input with reset button
   private renderTextInput(setting: Setting, themeName: string, input: Extract<Input, { type: "text" }>, value: InputValue | undefined): void {
     let control: TextComponent | null = null;
+    let setReset: (visible: boolean) => void = () => {};
     setting.addText((t) => {
       control = t;
       if (input.placeholder) t.setPlaceholder(input.placeholder);
       t.setValue(typeof value === "string" ? value : "")
        .onChange(async (value) => {
           await this.plugin.setUserInputValue(themeName, input.id, value);
+          setReset(this.plugin.themeStore.get(themeName)?.settings?.getUserValue(input.id) !== undefined);
        });
     });
-    this.addResetButton(setting, themeName, input, () => {
+    setReset = this.addResetButton(setting, themeName, input, () => {
       if (control && input.default !== undefined) control.setValue(input.default);
       else if (control) control.setValue("");
     });
@@ -231,15 +233,17 @@ export class ThemePADDSettingTab extends PluginSettingTab {
   // Render text area input with reset button
   private renderTextArea(setting: Setting, themeName: string, input: Extract<Input, { type: "textarea" }>, value: InputValue | undefined): void {
     let control: TextAreaComponent | null = null;
+    let setReset: (visible: boolean) => void = () => {};
     setting.addTextArea((t) => {
       control = t;
       if (input.placeholder) t.setPlaceholder(input.placeholder);
       t.setValue(typeof value === "string" ? value : "");
       t.onChange(async (value) => {
         await this.plugin.setUserInputValue(themeName, input.id, value);
+        setReset(this.plugin.themeStore.get(themeName)?.settings?.getUserValue(input.id) !== undefined);
       });
     });
-    this.addResetButton(setting, themeName, input, () => {
+    setReset = this.addResetButton(setting, themeName, input, () => {
       if (control && input.default !== undefined) control.setValue(input.default);
       else if (control) control.setValue("");
     });
@@ -248,14 +252,16 @@ export class ThemePADDSettingTab extends PluginSettingTab {
   // Render toggle input with reset button
   private renderToggle(setting: Setting, themeName: string, input: Extract<Input, { type: "toggle" }>, value: InputValue | undefined): void {
     let control: ToggleComponent | null = null;
+    let setReset: (visible: boolean) => void = () => {};
     setting.addToggle((t) => {
       control = t;
       t.setValue(typeof value === "boolean" ? value : false);
       t.onChange(async (value) => {
         await this.plugin.setUserInputValue(themeName, input.id, value);
+        setReset(this.plugin.themeStore.get(themeName)?.settings?.getUserValue(input.id) !== undefined);
       });
     });
-    this.addResetButton(setting, themeName, input, () => {
+    setReset = this.addResetButton(setting, themeName, input, () => {
       if (control) control.setValue(input.default ?? false);
     });
   }
@@ -263,15 +269,19 @@ export class ThemePADDSettingTab extends PluginSettingTab {
   // Render dropdown input with reset button
   private renderDropdown(setting: Setting, themeName: string, input: Extract<Input, { type: "dropdown" }>, value: InputValue | undefined): void {
     let control: DropdownComponent | null = null;
+    let setReset: (visible: boolean) => void = () => {};
     setting.addDropdown((d) => {
       control = d;
+      // Add "(Default)" option (value: "") if the dev didn't already include one
+      if (!input.options.some((o) => o.value === "")) d.addOption("", "(Default)");
       for (const option of input.options) d.addOption(option.value, option.label);
       d.setValue(typeof value === "string" ? value : "");
       d.onChange(async (value) => {
         await this.plugin.setUserInputValue(themeName, input.id, value);
+        setReset(this.plugin.themeStore.get(themeName)?.settings?.getUserValue(input.id) !== undefined);
       });
     });
-    this.addResetButton(setting, themeName, input, () => {
+    setReset = this.addResetButton(setting, themeName, input, () => {
       if (control && input.default !== undefined) control.setValue(input.default);
     });
   }
@@ -279,14 +289,16 @@ export class ThemePADDSettingTab extends PluginSettingTab {
   // Render single color input with reset button
   private renderSingleColor(setting: Setting, themeName: string, input: Extract<Input, { type: "color" }>, value: InputValue | undefined): void {
     let control: ColorComponent | null = null;
+    let setReset: (visible: boolean) => void = () => {};
     setting.addColorPicker((c) => {
       control = c;
       c.setValue(typeof value === "string" && value !== "" ? value : COLOR_FALLBACK);
       c.onChange(async (value) => {
         await this.plugin.setUserInputValue(themeName, input.id, value);
+        setReset(this.plugin.themeStore.get(themeName)?.settings?.getUserValue(input.id) !== undefined);
       });
     });
-    this.addResetButton(setting, themeName, input, () => {
+    setReset = this.addResetButton(setting, themeName, input, () => {
       if (control) control.setValue(input.default ?? COLOR_FALLBACK);
     });
   }
@@ -299,6 +311,7 @@ export class ThemePADDSettingTab extends PluginSettingTab {
 
     let lightControl: ColorComponent | null = null;
     let darkControl: ColorComponent | null = null;
+    let setReset: (visible: boolean) => void = () => {};
 
     setting.addColorPicker((c) => {
       lightControl = c;
@@ -306,6 +319,7 @@ export class ThemePADDSettingTab extends PluginSettingTab {
       c.onChange(async (value) => {
         const next: ThemedColorValue = { light: value, dark: darkControl?.getValue() ?? initial.dark };
         await this.plugin.setUserInputValue(themeName, input.id, next);
+        setReset(this.plugin.themeStore.get(themeName)?.settings?.getUserValue(input.id) !== undefined);
       });
     });
     setting.addColorPicker((c) => {
@@ -314,10 +328,11 @@ export class ThemePADDSettingTab extends PluginSettingTab {
       c.onChange(async (value) => {
         const next: ThemedColorValue = { light: lightControl?.getValue() ?? initial.light, dark: value };
         await this.plugin.setUserInputValue(themeName, input.id, next);
+        setReset(this.plugin.themeStore.get(themeName)?.settings?.getUserValue(input.id) !== undefined);
       });
     });
 
-    this.addResetButton(setting, themeName, input, () => {
+    setReset = this.addResetButton(setting, themeName, input, () => {
       lightControl?.setValue(input.defaultLight ?? COLOR_FALLBACK);
       darkControl?.setValue(input.defaultDark ?? COLOR_FALLBACK);
     });
@@ -326,6 +341,7 @@ export class ThemePADDSettingTab extends PluginSettingTab {
   // Render slider input with reset button
   private renderSlider(setting: Setting, themeName: string, input: Extract<Input, { type: "slider" }>, value: InputValue | undefined): void {
     let control: SliderComponent | null = null;
+    let setReset: (visible: boolean) => void = () => {};
     setting.addSlider((s) => {
       control = s;
       s.setLimits(input.min, input.max, input.step);
@@ -334,42 +350,50 @@ export class ThemePADDSettingTab extends PluginSettingTab {
       s.setValue(typeof value === "number" ? value : input.min);
       s.onChange(async (value) => {
         await this.plugin.setUserInputValue(themeName, input.id, value);
+        setReset(this.plugin.themeStore.get(themeName)?.settings?.getUserValue(input.id) !== undefined);
       });
     });
-    this.addResetButton(setting, themeName, input, () => {
+    setReset = this.addResetButton(setting, themeName, input, () => {
       if (control && input.default !== undefined) control.setValue(input.default);
     });
   }
 
-  // Add reset button to setting input
-  private addResetButton(setting: Setting, themeName: string, input: Input, restoreControl: () => void): void {
-    // Return if there are no defaults set
+  private addResetButton(setting: Setting, themeName: string, input: Input, restoreControl: () => void): (visible: boolean) => void {
     switch (input.type) {
       case "text":
       case "textarea":
       case "dropdown":
       case "toggle":
       case "slider":
-        if (input.default === undefined) return;
+        if (input.default === undefined) return () => {};
         break;
       case "color":
         if (input.themed) {
-          if (input.defaultDark === undefined || input.defaultLight === undefined) return;
-        } else if (input.default === undefined) return;
+          if (input.defaultDark === undefined || input.defaultLight === undefined) return () => {};
+        } else if (input.default === undefined) return () => {};
     }
 
-    const userValue = this.plugin.themeStore.get(themeName)?.settings?.getUserValue(input.id);
-    if (userValue === undefined) return; // Return if user hasn't overridden
+    let buttonEl: HTMLElement | null = null;
+    const setVisible = (visible: boolean) => { // visible if user has changed value
+      if (buttonEl) buttonEl.style.display = visible ? "" : "none";
+    };
 
     setting.addExtraButton((b) => {
+      buttonEl = b.extraSettingsEl;
       b.setIcon("rotate-ccw")
        .setTooltip("Reset (use theme default)")
        .onClick(async () => {
          await this.plugin.setUserInputValue(themeName, input.id, undefined);
          restoreControl();
-         this.display(); // Rerender so the reset button disappears
+         setVisible(false);
        });
     });
+
+    // Set initial visibility
+    const userValue = this.plugin.themeStore.get(themeName)?.settings?.getUserValue(input.id);
+    setVisible(userValue !== undefined);
+
+    return setVisible;
   }
 
   //#endregion

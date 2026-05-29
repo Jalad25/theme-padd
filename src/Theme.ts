@@ -56,13 +56,16 @@ export class Theme {
       return;
     }
 
-    // Migrate values from previous settings
-    result.settings.migrateUserValuesFrom(this.settings);
+    // Get previous version of settings, if they exist, to migrate
+    const previousSettings = this.settings;
 
     // Set settings
     this.settings = result.settings;
     this.settingsError = null;
     this.isUnsupported = false;
     this.loadError = null;
+
+    // Migrate values from previous settings
+    result.settings.migrateUserValuesFrom(previousSettings);
   }
 }

@@ -1,5 +1,9 @@
 /* #region Settings Tab */
 
+.theme-padd-theme-block .theme-padd-theme-body div:not(.theme-padd-error-block) .setting-item.setting-item-heading {
+  margin-top: var(--size-4-6);
+}
+
 .theme-padd-theme-header {
   display: flex; 
   align-items: center; 
@@ -68,27 +72,6 @@
   margin: 8px 0;
 }
 
-.theme-padd-error-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.theme-padd-error-title {
-  font-weight: 600;
-  color: var(--text-error);
-}
-
-.theme-padd-error-description {
-  margin: 0 0 8px 0;
-  color: var(--text-muted);
-}
-
-.theme-padd-copy-button {
-  margin-left: auto;
-}
-
 .theme-padd-error-detail {
   margin-top: 8px;
 }
@@ -111,9 +94,9 @@
   word-break: break-word;
 }
 
-/* #endregion */
-
 /* Version */
 .theme-padd-version {
 	text-align: end;
 }
+
+/* #endregion */
