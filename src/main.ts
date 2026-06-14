@@ -5,7 +5,7 @@ import { ThemeStore } from "./ThemeStore";
 import { InputValue, ThemeSettings } from "./ThemeSettings";
 import { Theme } from "./Theme";
 import { Control, ThemeSettingsJSON } from "./ThemeSettingsSchema";
-import { encodeKey, Scope } from "./KeyEncoding";
+import { encodeKey, Scope, themeKeyPrefixes } from "./KeyEncoding";
 
 //#region Types/Objects/Interfaces
 
@@ -263,13 +263,22 @@ export default class ThemePADDPlugin extends Plugin {
     if (theme.customizationSettings) this.applyThemeSettingsToDOM(theme.customizationSettings, { kind: "custom", themeName: theme.name });
   }
 
-  // Remove theme from store and data.json
+  // Remove theme from store and any traces in data.json
   private async removeTheme(themeName: string): Promise<void> {
     this.themeStore.remove(themeName);
-    if (this.pluginSettings.themes[themeName]) {
-      delete this.pluginSettings.themes[themeName];
-      await this.savePluginSettings();
+
+    delete this.pluginSettings.themes[themeName]; // Remove from list of themes
+    delete this.pluginSettings.customizations.perTheme[themeName]; // Remove from lists of customizations
+
+    // Remove from user values
+    const prefixes = themeKeyPrefixes(themeName);
+    for (const key of Object.keys(this.pluginSettings.userValues)) {
+      if (prefixes.some(p => key.startsWith(p))) {
+        delete this.pluginSettings.userValues[key];
+      }
     }
+
+    await this.savePluginSettings();
   }
 
   applyThemeSettingsToDOM(settings: ThemeSettings, scope: Scope): void {

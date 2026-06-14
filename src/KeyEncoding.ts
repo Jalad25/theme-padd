@@ -16,6 +16,11 @@ export function encodeKey(scope: Scope, id: string): string {
   }
 }
 
+// Quick list of key prefixes for every encoded key tied to a given theme
+export function themeKeyPrefixes(themeName: string): string[] {
+  return [`dev:theme:${themeName}:`, `custom:theme:${themeName}:`];
+}
+
 // Recover the scope and the dev's id from an Obsidian-bound key string
 export function decodeKey(key: string): { scope: Scope; id: string } | null {
   if (key.startsWith("global:")) {
