@@ -1,15 +1,24 @@
 import { Plugin } from "obsidian";
-import { ThemePADDSettingTab } from "./ThemePADDSettingTab";
-import { InputValue, ThemeSettings } from "./ThemeSettings";
 import { ThemeSettingsLoader } from "./ThemeSettingsLoader";
+import { ThemePADDSettingTab } from "./ThemePADDSettingTab";
 import { ThemeStore } from "./ThemeStore";
+import { InputValue, ThemeSettings } from "./ThemeSettings";
 import { Theme } from "./Theme";
+import { ThemeSettingsJSON } from "./ThemeSettingsSchema";
+import { encodeKey, Scope } from "./KeyEncoding";
 
 //#region Types/Objects/Interfaces
+
+export interface Customizations {
+  perTheme: Record<string, ThemeSettings>;
+  global: ThemeSettings | null;
+}
 
 export interface ThemePADDSettings {
   schemaVersion: number;
   themes: Record<string, ThemeSettings>;
+  customizations: Customizations;
+  userValues: Record<string, InputValue>;
 }
 
 interface CustomCss {
@@ -25,7 +34,9 @@ export const DATA_JSON_SCHEMA_VERSION = 1; // For data.json schema, currently un
 
 export const DEFAULT_SETTINGS: ThemePADDSettings = {
   schemaVersion: DATA_JSON_SCHEMA_VERSION,
-  themes: {}
+  themes: {},
+  customizations: { perTheme: {}, global: null },
+  userValues: {}
 };
 
 //#endregion
@@ -34,28 +45,33 @@ export default class ThemePADDPlugin extends Plugin {
   pluginSettings!: ThemePADDSettings;
   themeStore: ThemeStore = new ThemeStore();
   themeSettingsLoader: ThemeSettingsLoader = new ThemeSettingsLoader(this);
+  globalSettings: ThemeSettings | null = null;
   private pluginSettingTab!: ThemePADDSettingTab;
-
-  // Get name of currently active theme
-  get activeThemeName(): string | null {
-    return this.themeStore.getActive()?.name ?? null;
-  }
-
-  // Get active theme stored settings
-  get activeThemeSettings(): ThemeSettings | null {
-    return this.themeStore.getActive()?.settings ?? null;
-  }
+  private devStyleEl: HTMLStyleElement | null = null; // dev style element
+  private globalStyleEl: HTMLStyleElement | null = null; // global style element
+  private customStyleEl: HTMLStyleElement | null = null; // custom style element
 
   async onload() {
     // Plugin Settings
     await this.loadPluginSettings();
+
+    // Hydrate global settings
+    const rawGlobal = this.pluginSettings.customizations.global;
+    if (!rawGlobal) this.globalSettings = null;
+    else {
+      const result = ThemeSettings.fromSettingsJSON(rawGlobal, "");
+      this.globalSettings = result.ok ? result.settings : null;
+    }
 
     // Settings Tab
     this.pluginSettingTab = new ThemePADDSettingTab(this.app, this);
     this.addSettingTab(this.pluginSettingTab);
 
     // Load theme infomation/settings on workspace ready
-    this.app.workspace.onLayoutReady(() => this.reconcileThemes());
+    this.app.workspace.onLayoutReady(() => {
+      this.createStyleElements();
+      this.reconcileThemes();
+    });
 
     // CSS Change event
     this.registerEvent(
@@ -66,8 +82,12 @@ export default class ThemePADDPlugin extends Plugin {
   }
 
   onunload() {
-    // Clear theme settings set by plugin
-    this.activeThemeSettings?.clearFromDOM();
+    // Style elements will automatically be removed
+    // Classes need to be removed from the body
+    const active = this.themeStore.getActive();
+    if (active?.settings) this.clearClassesFromBody(active.settings);
+    if (active?.customizationSettings) this.clearClassesFromBody(active.customizationSettings);
+    if (this.globalSettings) this.clearClassesFromBody(this.globalSettings);
   }
 
   //#region Plugin Settings
@@ -87,6 +107,7 @@ export default class ThemePADDPlugin extends Plugin {
     }
 
     this.pluginSettings = Object.assign({}, DEFAULT_SETTINGS, filtered);
+
     if (droppedAny) await this.savePluginSettings();
   }
 
@@ -99,69 +120,147 @@ export default class ThemePADDPlugin extends Plugin {
   //#region Theme Settings
 
   // Reconcile themes data/settings
-  private async reconcileThemes() {
-    // Verify customCss exists, made "safe" with type
-    const customCss = (this.app as unknown as { customCss?: CustomCss}).customCss;
+  private async reconcileThemes(): Promise<void> {
+    // Tap into a property that is not in the Obsidian public API to get list of themes and the active theme
+    const customCss = (this.app as unknown as { customCss?: CustomCss }).customCss;
     if (!customCss) return;
 
-    // Get installed themes and active theme
-    const installed: string[] = Object.keys(customCss.themes ?? {});
-    const newActive: string | null = customCss.theme || null;
-    const activeChanged = newActive !== this.activeThemeName;
+    const installed: string[] = Object.keys(customCss.themes ?? {}); // Installed themes
+    const newActive: string | null = customCss.theme || null; // Active theme
+    const activeChanged = newActive !== this.themeStore.getActive()?.name; // Previously marked active theme
 
-    // Clear the previous active's DOM
-    if (activeChanged) this.activeThemeSettings?.clearFromDOM();
+    // If changed, clear previous active theme style from DOM
+    if (activeChanged) {
+      const previousActive = this.themeStore.getActive();
+      if (previousActive?.settings) this.clearThemeSettingsFromDOM(previousActive.settings, { kind: "dev", themeName: previousActive.name });
+      if (previousActive?.customizationSettings) this.clearThemeSettingsFromDOM(previousActive.customizationSettings, { kind: "custom", themeName: previousActive.name });
+    }
 
-    // Remove themes no longer installed
+    // Remove no longer installed themes
     for (const theme of [...this.themeStore.all()]) {
       if (!installed.includes(theme.name)) await this.removeTheme(theme.name);
     }
 
-    // Load settings.json for newly installed themes and newly updated themes
+    // Load theme settings
     for (const name of installed) {
       const version: string = customCss.themes[name].version;
-
-      // Load one at a time, might update later for multiple
       await this.loadThemeSettings(name, version);
     }
 
-    // Flip the active flag now that every installed theme is in the store
+    // Set active theme in store
     if (activeChanged) this.themeStore.setActive(newActive);
 
-    // Apply settings for current active theme
-    this.activeThemeSettings?.applyToDOM();
+    const active = this.themeStore.getActive();
+    if (active) this.applyActiveLayers(active); // Apply all settings styles
+    else if (this.globalSettings) this.applyThemeSettingsToDOM(this.globalSettings, { kind: "global" }); // Apply just the global settings styles
 
-    // Refresh plugin settings tab
     this.pluginSettingTab?.refresh();
   }
 
   // Load theme settings
   private async loadThemeSettings(themeName: string, fetchedVersion: string): Promise<void> {
-    const theme = this.themeStore.upsert(themeName);
+    const theme = this.themeStore.upsert(themeName); // Update or create in store
 
-    // Theme already has settings at this version
+    // Get raw settings
+    const rawCustomization = this.pluginSettings.customizations.perTheme[theme.name];
+    if (!rawCustomization) {
+      theme.customizationSettings = null;
+    } else {
+      const result = ThemeSettings.fromSettingsJSON(rawCustomization, "");
+      theme.customizationSettings = result.ok ? result.settings : null;
+    }
+
+    // If same version already loaded, exit
     if (theme.settings?.themeVersion === fetchedVersion) return;
 
-    // data.json has settings at this version
+    // Load from data.json and apply settings style, if active
     const saved = this.pluginSettings.themes[themeName];
     if (saved && saved.themeVersion === fetchedVersion) {
       theme.applyRawSettings(saved, fetchedVersion);
-      await this.persistTheme(theme);
+      await this.persistAndApplySettings({ kind: "dev", themeName: theme.name });
       return;
     }
 
-    // Fetch raw settings, build theme settings object
+    // Load from repo and apply settings style, if active
     const result = await this.themeSettingsLoader.loadThemeSettings(themeName, fetchedVersion);
     theme.applyThemeSettingsFromLoadResult(result, fetchedVersion);
-    await this.persistTheme(theme);
+    await this.persistAndApplySettings({ kind: "dev", themeName: theme.name });
   }
 
-  // Sync the theme's settings to data.json and apply to DOM if active
-  private async persistTheme(theme: Theme): Promise<void> {
-    if (theme.settings) this.pluginSettings.themes[theme.name] = theme.settings;
-    else delete this.pluginSettings.themes[theme.name];
-    await this.savePluginSettings();
-    if (theme.isActive) theme.settings?.applyToDOM();
+  // Sync the theme's dev settings to data.json and apply to DOM, if active
+  async persistAndApplySettings(scope: Scope): Promise<void> {
+    if (scope.kind === "dev" || scope.kind === "custom") {
+      const theme = this.themeStore.get(scope.themeName);
+      if (!theme) return;
+      if (scope.kind === "dev") {
+        if (theme.settings) this.pluginSettings.themes[theme.name] = theme.settings;
+        else delete this.pluginSettings.themes[theme.name];
+      } else {
+        if (theme.customizationSettings) this.pluginSettings.customizations.perTheme[theme.name] = theme.customizationSettings;
+        else delete this.pluginSettings.customizations.perTheme[theme.name];
+      }
+      await this.savePluginSettings()
+        .then(() => {
+          if (theme.isActive) this.applyActiveLayers(theme);
+        });
+    } else {
+      if (this.globalSettings) this.pluginSettings.customizations.global = this.globalSettings;
+      else this.pluginSettings.customizations.global = null;
+      await this.savePluginSettings()
+        .then(() => {
+          if (this.globalSettings) this.applyThemeSettingsToDOM(this.globalSettings, { kind: "global" });
+        });
+    }
+  }
+
+  // Save perTheme customizations settings
+  async applyCustomizationSettings(themeName: string, newSettings: ThemeSettingsJSON | null): Promise<void> {
+    const theme = this.themeStore.get(themeName);
+    if (!theme) return;
+
+    // Remove from DOM
+    if (theme.isActive && theme.customizationSettings) this.clearThemeSettingsFromDOM(theme.customizationSettings, { kind: "custom", themeName: theme.name });
+
+    // Clear if empty
+    if (!newSettings) {
+      theme.customizationSettings = null;
+      await this.persistAndApplySettings({ kind: "custom", themeName: theme.name });
+      return;
+    }
+
+    // Load raw settings
+    const result = ThemeSettings.fromSettingsJSON(newSettings, "");
+    if (!result.ok) return;
+
+    theme.customizationSettings = result.settings;
+    await this.persistAndApplySettings({ kind: "custom", themeName: theme.name });
+  }
+
+  // Save global settings
+  async applyGlobalCustomizationSettings(newSettings: ThemeSettingsJSON | null): Promise<void> {
+    // Remove from DOM
+    if (this.globalSettings) this.clearThemeSettingsFromDOM(this.globalSettings, { kind: "global" });
+
+    // Clear if empty
+    if (!newSettings) {
+      this.globalSettings = null;
+      await this.persistAndApplySettings({ kind: "global" });
+      return;
+    }
+
+    // Load raw settings
+    const result = ThemeSettings.fromSettingsJSON(newSettings, "");
+    if (!result.ok) return;
+
+    this.globalSettings = result.settings;
+    await this.persistAndApplySettings({ kind: "global" });
+  }
+
+  // Apply dev -> global -> perTheme customizations for the given active theme
+  private applyActiveLayers(theme: Theme): void {
+    if (theme.settings) this.applyThemeSettingsToDOM(theme.settings, { kind: "dev", themeName: theme.name });
+    if (this.globalSettings) this.applyThemeSettingsToDOM(this.globalSettings, { kind: "global" });
+    if (theme.customizationSettings) this.applyThemeSettingsToDOM(theme.customizationSettings, { kind: "custom", themeName: theme.name });
   }
 
   // Remove theme from store and data.json
@@ -173,22 +272,114 @@ export default class ThemePADDPlugin extends Plugin {
     }
   }
 
-  // Update a single user input value, persist, apply if active
-  async setUserInputValue(themeName: string, inputId: string, value: InputValue | undefined): Promise<void> {
-    const theme = this.themeStore.get(themeName);
-    if (!theme?.settings) return;
+  applyThemeSettingsToDOM(settings: ThemeSettings, scope: Scope): void {
+    // Body = Vault body
+    const body = this.app.workspace.rootSplit?.doc?.body;
+    if (!body) return; // Workspace not ready yet
 
-    // Set in theme settings object
-    theme.settings.setInputValue(inputId, value);
+    const lookupValue = (id: string): InputValue | undefined => {
+      return this.pluginSettings.userValues[encodeKey(scope, id)];
+    };
 
-    // Persist to data.json
-    this.pluginSettings.themes[themeName] = theme.settings;
-    await this.savePluginSettings();
+    const varDeclarations: string[] = [];
+    for (const control of settings.allControls()) {
+      switch (control.onChange.action) {
+        case "set-css-variable": {
+          const value = lookupValue(control.id);
+          const decl = formatVariableDeclaration(control.onChange.name, value, control.onChange.clearMode);
+          if (decl) varDeclarations.push(decl);
+          break;
+        }
+        case "set-css-variable-to": {
+          const value = settings.effectiveValue(control, lookupValue);
+          const emitted: InputValue | undefined = value === true ? control.onChange.value : undefined;
+          const decl = formatVariableDeclaration(control.onChange.name, emitted, control.onChange.clearMode);
+          if (decl) varDeclarations.push(decl);
+          break;
+        }
+        case "toggle-class": {
+          const value = settings.effectiveValue(control, lookupValue);
+          body.toggleClass(control.onChange.class, value === true);
+          break;
+        }
+        case "set-class-from-list": {
+          const value = settings.effectiveValue(control, lookupValue);
+          body.removeClasses(control.onChange.classes);
+          if (typeof value === "string" && value !== "" && control.onChange.classes.includes(value)) {
+            body.addClass(value);
+          }
+          break;
+        }
+      }
+    }
 
-    // Apply theme settings
-    if (theme.isActive) theme.settings.applyToDOM();
+    this.writeStyleElement(scope, varDeclarations);
+  }
+
+  clearThemeSettingsFromDOM(settings: ThemeSettings, scope?: Scope): void {
+    if (scope) this.writeStyleElement(scope, []);
+    this.clearClassesFromBody(settings);
+  }
+
+  // Clear classes from VAULT body
+  private clearClassesFromBody(settings: ThemeSettings): void {
+    const body = this.app.workspace.rootSplit?.doc?.body;
+    if (!body) return;
+    for (const control of settings.allControls()) {
+      switch (control.onChange.action) {
+        case "toggle-class":
+          body.removeClass(control.onChange.class);
+          break;
+        case "set-class-from-list":
+          body.removeClasses(control.onChange.classes);
+          break;
+      }
+    }
+  }
+
+  // Create style elements: dev (theme dev settings changes), global, and custom
+  private createStyleElements(): void {
+    const head = this.app.workspace.rootSplit?.doc?.head;
+    if (!head) return;
+    this.devStyleEl = head.createEl("style", { attr: { "data-theme-padd-scope": "dev" } });
+    this.globalStyleEl = head.createEl("style", { attr: { "data-theme-padd-scope": "global" } });
+    this.customStyleEl = head.createEl("style", { attr: { "data-theme-padd-scope": "custom" } });
+    this.register(() => { // Registered in order of precedence
+      this.devStyleEl?.remove();
+      this.globalStyleEl?.remove();
+      this.customStyleEl?.remove();
+      this.devStyleEl = null;
+      this.globalStyleEl = null;
+      this.customStyleEl = null;
+    });
+  }
+
+  // Add CSS changes to style element
+  private writeStyleElement(scope: Scope, declarations: string[]): void {
+    const styleEl = scope.kind === "dev" ? this.devStyleEl
+                                         : scope.kind === "global" ? this.globalStyleEl
+                                                                   : this.customStyleEl;
+    if (!styleEl) return;
+    styleEl.textContent = declarations.length === 0 ? "" : `body {\n  ${declarations.join("\n  ")}\n}`;
   }
 
   //#endregion
 
 }
+
+//#region Utilities
+
+// Build variable declaraation for style element CSS
+function formatVariableDeclaration(
+  name: string,
+  value: InputValue | undefined,
+  clearMode: "empty" | "remove" | undefined
+): string | null {
+  if (value === undefined) {
+    if (clearMode === "empty") return `${name}: ;`;
+    return null; // either remove or default, remove completely
+  }
+  return `${name}: ${typeof value === "number" ? String(value) : value};`;
+}
+
+//#endregion

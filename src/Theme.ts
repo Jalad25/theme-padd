@@ -10,6 +10,7 @@ export type SettingsError = { reason: "invalidSettings"; detail: string };
 export class Theme {
   readonly name: string;
   settings: ThemeSettings | null = null;
+  customizationSettings: ThemeSettings | null = null;
   isUnsupported: boolean = false;
   isActive: boolean = false;
   settingsError: SettingsError | null = null;
@@ -56,16 +57,10 @@ export class Theme {
       return;
     }
 
-    // Get previous version of settings, if they exist, to migrate
-    const previousSettings = this.settings;
-
     // Set settings
     this.settings = result.settings;
     this.settingsError = null;
     this.isUnsupported = false;
     this.loadError = null;
-
-    // Migrate values from previous settings
-    result.settings.migrateUserValuesFrom(previousSettings);
   }
 }

@@ -25,8 +25,18 @@ export class ThemeStore {
     // Activate the new theme
     if (name) {
       const theme = this.get(name);
-      if(theme) theme.isActive = true;
+      if (theme) theme.isActive = true;
     }
+  }
+
+  // Get if specific theme has dev settings
+  hasDevSettings(name: string): boolean {
+    return this.get(name)?.settings !== null;
+  }
+
+  // Get if specific theme has customization settings
+  hasCustomizationSettings(name: string): boolean {
+    return this.get(name)?.customizationSettings !== undefined && this.get(name)?.customizationSettings !== null;
   }
 
   // Iterate all themes in the store

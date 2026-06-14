@@ -2,43 +2,38 @@ import { z } from "zod";
 
 //#region Types/Objects/Interfaces
 
-type InputType = Input["type"];
 type ColorSpace = (typeof COLOR_SPACES)[number];
 
 export type Action = z.infer<typeof ActionSchema>;
-export type Input = z.infer<typeof InputSchema>;
-export type HeadingItem = z.infer<typeof HeadingItemSchema>;
-export type SettingItem = z.infer<typeof SettingItemSchema>;
-export type GroupItem = z.infer<typeof GroupItemSchema>;
-export type Item = z.infer<typeof ItemSchema>;
+export type Control = z.infer<typeof ControlSchema>;
+export type SettingDefinitionItem = z.infer<typeof SettingDefinitionItem>;
 export type ThemeSettingsJSON = z.infer<typeof ThemeSettingsJSONSchema>;
 
 export type ParseResult =
-{ ok: true; data: ThemeSettingsJSON; }
-| { ok: false; reason: string; };
+{ ok: true; data: ThemeSettingsJSON }
+| { ok: false; reason: string };
 
 //#endregion
 
 //#region Constants
 
-const SETTINGS_JSON_SCHEMA_VERSION = 1;
+export const SETTINGS_JSON_SCHEMA_VERSION = 1;
 
 const COLOR_SPACES = ["hex", "rgb", "hsl"] as const;
 const DEFAULT_COLOR_SPACE: ColorSpace = "hex";
 
-const ACTION_COMPATIBILITY: Record<Action["action"], readonly InputType[]> = {
-  "set-css-variable":        ["text", "textarea", "color", "slider", "dropdown"],
+const ACTION_COMPATIBILITY: Record<Action["action"], readonly ControlType[]> = {
+  "set-css-variable":        ["text", "textarea", "color", "number", "slider", "dropdown"],
   "set-css-variable-to":     ["toggle"],
-  "set-css-variable-themed": ["color"],
   "toggle-class":            ["toggle"],
   "set-class-from-list":     ["dropdown"],
 };
 
 //#endregion
 
-//#region Schemas (Zod)
+//#region Schema (Zod)
 
-//#region Actions
+//#region Action
 
 const SetCssVariable = z.object({
   action: z.literal("set-css-variable"),
@@ -50,14 +45,7 @@ const SetCssVariableTo = z.object({
   action: z.literal("set-css-variable-to"),
   name: z.string(),
   value: z.string(),
-  clearMode: z.enum(["remove", "empty"]).optional() // defaults to "remove"
-});
-
-const SetCssVariableThemed = z.object({
-  action: z.literal("set-css-variable-themed"),
-  nameLight: z.string(),
-  nameDark: z.string(),
-  clearMode: z.enum(["remove", "empty"]).optional() // defaults to "remove"
+  clearMode: z.enum(["remove", "empty"]).optional()// defaults to "remove"
 });
 
 const ToggleClass = z.object({
@@ -73,283 +61,244 @@ const SetClassFromList = z.object({
 const ActionSchema = z.discriminatedUnion("action", [
   SetCssVariable,
   SetCssVariableTo,
-  SetCssVariableThemed,
   ToggleClass,
   SetClassFromList
 ]);
 
 //#endregion
 
-//#region Inputs
+//#region Controls
 
-const SelectOptionSchema = z.object({
-  value: z.string(),
-  label: z.string()
-});
-
-const TextInputSchema = z.object({
+const TextControl = z.object({
   type: z.literal("text"),
-  id: z.string(),
-  default: z.string().optional(),
+  id: z.string(), // Theme PADD specific
+  defaultValue: z.string().optional(),
   placeholder: z.string().optional(),
-  onChange: ActionSchema.optional()
+  onChange: ActionSchema // Theme PADD specific
 });
 
-const TextAreaInputSchema = z.object({
+const TextAreaControl = z.object({
   type: z.literal("textarea"),
-  id: z.string(),
-  default: z.string().optional(),
+  id: z.string(), // Theme PADD specific
+  defaultValue: z.string().optional(),
   placeholder: z.string().optional(),
-  onChange: ActionSchema.optional()
+  rows: z.number().int().positive().optional(),
+  onChange: ActionSchema // Theme PADD specific
 });
 
-const ToggleInputSchema = z.object({
-  type: z.literal("toggle"),
-  id: z.string(),
-  default: z.boolean().optional(),
-  onChange: ActionSchema.optional()
-});
-
-const DropdownInputSchema = z.object({
-  type: z.literal("dropdown"),
-  id: z.string(),
-  default: z.string().optional(),
-  options: z.array(SelectOptionSchema),
-  onChange: ActionSchema.optional()
-}).superRefine((data, ctx) => { // Check default matches an option or empty
-  if (data.default === undefined || data.default === "") return;
-  if (!data.options.some((o) => o.value === data.default)) {
+const NumberControl = z.object({
+  type: z.literal("number"),
+  id: z.string(), // Theme PADD specific
+  defaultValue: z.number().optional(),
+  placeholder: z.string().optional(),
+  min: z.number().optional(),
+  max: z.number().optional(),
+  step: z.union([z.number(), z.literal("any")]).optional(),
+  onChange: ActionSchema // Theme PADD specific
+}).superRefine((data, ctx) => { // Check min, max, and default to min and max
+  if (data.min !== undefined && data.max !== undefined && data.min >= data.max) {
     ctx.addIssue({
-      code: "custom",
-      path: ["default"],
-      message: `default "${data.default}" does not match any option value`
-    });
-  }
-});
-
-const ColorInputSchema = z.object({
-  type: z.literal("color"),
-  id: z.string(),
-  colorSpace: z.enum(COLOR_SPACES).optional(),
-  themed: z.boolean().optional(),
-  default: z.string().optional(),
-  defaultLight: z.string().optional(),
-  defaultDark: z.string().optional(),
-  onChange: ActionSchema.optional()
-}).superRefine((data, ctx) => { // Check theme mode
-  const colorSpace = data.colorSpace ?? DEFAULT_COLOR_SPACE;
-
-  if (data.themed) {
-    if (data.default !== undefined) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["default"],
-        message: `themed color cannot have "default"; use "defaultLight" and "defaultDark"`
-      });
-    }
-    if (data.defaultLight === undefined || data.defaultDark === undefined) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["themed"],
-        message: `themed color requires both "defaultLight" and "defaultDark"`
-      });
-    }
-    if (data.defaultLight !== undefined && !matchesColorSpace(data.defaultLight, colorSpace)) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["defaultLight"],
-        message: `defaultLight "${data.defaultLight}" does not match colorSpace "${colorSpace}"`
-      });
-    }
-    if (data.defaultDark !== undefined && !matchesColorSpace(data.defaultDark, colorSpace)) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["defaultDark"],
-        message: `defaultDark "${data.defaultDark}" does not match colorSpace "${colorSpace}"`
-      });
-    }
-  } else {
-    if (data.defaultLight !== undefined || data.defaultDark !== undefined) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["themed"],
-        message: `"defaultLight" / "defaultDark" require "themed: true"`
-      });
-    }
-    if (data.default !== undefined && !matchesColorSpace(data.default, colorSpace)) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["default"],
-        message: `default "${data.default}" does not match colorSpace "${colorSpace}"`
-      });
-    }
-  }
-});
-
-const SliderInputSchema = z.object({
-  type: z.literal("slider"),
-  id: z.string(),
-  default: z.number().optional(),
-  min: z.number(),
-  max: z.number(),
-  step: z.union([z.number(), z.literal("any")]),
-  onChange: ActionSchema.optional()
-}).superRefine((data, ctx) => { // Check min/max, default range, step
-  if (data.min >= data.max) { // Realistic min and max
-    ctx.addIssue({
-      code: "custom",
+      code: "custom", 
       path: ["max"],
       message: `max (${data.max}) must be greater than min (${data.min})`
     });
   }
-  if (data.default !== undefined) {
-    if (data.default < data.min || data.default > data.max) { // min <= default <= max
+  if (data.defaultValue !== undefined) {
+    if (data.min !== undefined && data.defaultValue < data.min) {
       ctx.addIssue({
-        code: "custom",
-        path: ["default"],
-        message: `default ${data.default} is out of range [${data.min}, ${data.max}]`
+        code: "custom", 
+        path: ["defaultValue"],
+        message: `defaultValue ${data.defaultValue} is below min ${data.min}`
       });
     }
-    if (typeof data.step === "number" && data.step > 0) { // Realistic step
-      const offset = data.default - data.min; // Default distance from min
+    if (data.max !== undefined && data.defaultValue > data.max) {
+      ctx.addIssue({
+        code: "custom", 
+        path: ["defaultValue"],
+        message: `defaultValue ${data.defaultValue} is above max ${data.max}`
+      });
+    }
+  }
+});
+
+const ToggleControl = z.object({
+  type: z.literal("toggle"),
+  id: z.string(), // Theme PADD specific
+  defaultValue: z.boolean().optional(),
+  onChange: ActionSchema // Theme PADD specific
+});
+
+const DropdownControl = z.object({
+  type: z.literal("dropdown"),
+  id: z.string(), // Theme PADD specific
+  defaultValue: z.string().optional(),
+  options: z.record(z.string(), z.string()),
+  onChange: ActionSchema // Theme PADD specific
+}).superRefine((data, ctx) => { // Check default matches an option or empty
+  if (data.defaultValue === undefined || data.defaultValue === "") return;
+  if (!(data.defaultValue in data.options)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["defaultValue"],
+      message: `defaultValue "${data.defaultValue}" does not match any option key`
+    });
+  }
+});
+
+const ColorControl = z.object({
+  type: z.literal("color"),
+  id: z.string(), // Theme PADD specific
+  defaultValue: z.string().optional(),
+  colorSpace: z.enum(COLOR_SPACES).optional(), // Theme PADD specific
+  onChange: ActionSchema // Theme PADD specific
+}).superRefine((data, ctx) => { // Check default matches color space
+  const colorSpace = data.colorSpace ?? DEFAULT_COLOR_SPACE;
+  if (data.defaultValue !== undefined && !matchesColorSpace(data.defaultValue, colorSpace)) {
+    ctx.addIssue({
+      code: "custom", 
+      path: ["defaultValue"],
+      message: `defaultValue "${data.defaultValue}" does not match colorSpace "${colorSpace}"`
+    });
+  }
+});
+
+const SliderControl = z.object({
+  type: z.literal("slider"),
+  id: z.string(), // Theme PADD specific
+  defaultValue: z.number().optional(),
+  min: z.number(),
+  max: z.number(),
+  step: z.number(),
+  onChange: ActionSchema // Theme PADD specific
+}).superRefine((data, ctx) => {
+  if (data.min >= data.max) { // Realistic min and max 
+    ctx.addIssue({
+      code: "custom", 
+      path: ["max"],
+      message: `max (${data.max}) must be greater than min (${data.min})`
+    });
+  }
+  if (data.defaultValue !== undefined) {
+    if (data.defaultValue < data.min || data.defaultValue > data.max) { // min <= default <= max
+      ctx.addIssue({
+        code: "custom", 
+        path: ["defaultValue"],
+        message: `defaultValue ${data.defaultValue} is out of range [${data.min}, ${data.max}]`
+      });
+    }
+    if (data.step > 0) { // Realistic step
+      const offset = data.defaultValue - data.min; // Default distance from min
       const remainder = Math.abs(offset - Math.round(offset / data.step) * data.step); // Default's distance from nearest point running from min up in step size increments
       if (remainder > 1e-9) { // JavaScript doesn't compare floats cleanly, so we check against a tolerance of 1e-9
         ctx.addIssue({
-          code: "custom",
-          path: ["default"],
-          message: `default ${data.default} is not aligned to step ${data.step} from min ${data.min}`
+          code: "custom", 
+          path: ["defaultValue"],
+          message: `defaultValue ${data.defaultValue} is not aligned to step ${data.step} from min ${data.min}`
         });
       }
     }
   }
 });
 
-const InputSchema = z.discriminatedUnion("type", [
-  TextInputSchema,
-  TextAreaInputSchema,
-  ToggleInputSchema,
-  DropdownInputSchema,
-  ColorInputSchema,
-  SliderInputSchema
+const ControlSchema = z.discriminatedUnion("type", [
+  ToggleControl,
+  DropdownControl,
+  TextControl,
+  TextAreaControl,
+  NumberControl,
+  SliderControl,
+  ColorControl
 ]);
+
+type ControlType = z.infer<typeof ControlSchema>["type"];
 
 //#endregion
 
-//#region Items
+//#region Setting Definitions
 
-const HeadingItemSchema = z.object({
-  type: z.literal("heading"),
-  name: z.string(),
-  desc: z.string().optional()
-});
-
-const SettingItemSchema = z.object({
-  type: z.literal("setting"),
+const SettingDefinitionBase = z.object({
   name: z.string(),
   desc: z.string().optional(),
-  tooltip: z.string().optional(),
-  inputs: z.array(InputSchema)
+  aliases: z.array(z.string()).optional()
 });
 
-const GroupItemSchema = z.object({
-  type: z.literal("group"),
-  name: z.string(),
-  desc: z.string().optional(),
-  items: z.array(SettingItemSchema)
+const SettingDefinitionControl = SettingDefinitionBase.extend({
+  type: z.literal("control"), // Theme PADD specific
+  control: ControlSchema
 });
 
-const ItemSchema = z.discriminatedUnion("type", [
-  HeadingItemSchema,
-  SettingItemSchema,
-  GroupItemSchema
+const SettingDefinitionEmpty = SettingDefinitionBase.extend({
+  type: z.literal("empty") // Theme PADD specific
+});
+
+const SettingDefinitionGroup = z.object({
+  type: z.literal("group"), // Theme PADD (Obsidian uses 'group' | 'list')
+  heading: z.string().optional(),
+  items: z.array(
+    z.discriminatedUnion("type", [SettingDefinitionControl, SettingDefinitionEmpty])
+  )
+});
+
+const SettingDefinitionItem = z.discriminatedUnion("type", [
+  SettingDefinitionControl,
+  SettingDefinitionEmpty,
+  SettingDefinitionGroup
 ]);
 
 //#endregion
 
 //#region Root
 
-const InputValueSchema = z.union([
-  z.string(),
-  z.number(),
-  z.boolean(),
-  z.object({ light: z.string(), dark: z.string() })
-]);
-
 const ThemeSettingsJSONSchema = z.object({
-  schemaVersion: z.literal(SETTINGS_JSON_SCHEMA_VERSION),
-  icon: z.string().optional(),
-  items: z.array(ItemSchema),
-  userValues: z.record(z.string(), InputValueSchema).default({})
-}).superRefine((data, ctx) => { // Check unique ids and actions compatible with input
-  type ActionSite = { action: z.infer<typeof ActionSchema>, input: z.infer<typeof InputSchema>, path: (string | number)[] };
-  const inputIds = new Set<string>();
-  const actions: ActionSite[] = [];
+  schemaVersion: z.literal(SETTINGS_JSON_SCHEMA_VERSION), // Theme PADD specific
+  settingItems: z.array(SettingDefinitionItem)
+}).superRefine((data, ctx) => { // Check unique ids and actions compatible with control
+  type ControlSite = { control: z.infer<typeof ControlSchema>; path: (string | number)[] };
+  const ids = new Set<string>();
+  const controls: ControlSite[] = [];
 
-  // Iterate all items
-  for (let i = 0; i < data.items.length; i++) {
-    const item = data.items[i];
-    if (item.type === "heading") continue; // Nothing to check for headings
-    if (item.type === "setting") {
-      iterateInputs(item.inputs, ["items", i, "inputs"]);
+  // Iterate all setting items
+  for (let i = 0; i < data.settingItems.length; i++) {
+    const item = data.settingItems[i];
+    if (item.type === "empty") continue; // Nothing to check for empty
+    if (item.type === "control") {
+      collectIdAndControl(item.control, ["settingItems", i, "control"]);
     } else { // group
       // Iterate items in group
       for (let j = 0; j < item.items.length; j++) {
-        iterateInputs(item.items[j].inputs, ["items", i, "items", j, "inputs"]);
+        const child = item.items[j];
+        if (child.type === "control") {
+          collectIdAndControl(child.control, ["settingItems", i, "items", j, "control"]);
+        }
       }
     }
   }
 
-  // Iterate inputs
-  // basepath: JSON path to inputs array
-  function iterateInputs(inputs: z.infer<typeof InputSchema>[], basePath: (string | number)[]) {
-    for (let k = 0; k < inputs.length; k++) {
-      const input = inputs[k];
-      const inputPath = [...basePath, k];
-
-      // Collect id
-      const key = input.id.toLowerCase();
-      if (inputIds.has(key)) { // Duplicate id found
-        ctx.addIssue({ code: "custom", path: [...inputPath, "id"], message: "duplicate id" });
-      } else {
-        inputIds.add(key);
-      }
-
-      // Collect action
-      if (input.onChange !== undefined) {
-        actions.push({ action: input.onChange, input, path: [...inputPath, "onChange"] });
-      }
+  // Iterate controls
+  // path: JSON path to control
+  function collectIdAndControl(control: z.infer<typeof ControlSchema>, path: (string | number)[]) {
+    // Collect id
+    const id = control.id.toLowerCase();
+    if (ids.has(id)) { // Duplicate id found
+      ctx.addIssue({ code: "custom", path: [...path, "id"], message: "duplicate id" });
+    } else {
+      ids.add(id);
     }
+
+    // Collect control
+    controls.push({ control, path });
   }
 
-  // Check action compatibility with input
-  for (const { action, input, path } of actions) {
+  // Check action compatibility with control
+  for (const { control, path } of controls) {
     // Type level compatibility
-    const allowed = ACTION_COMPATIBILITY[action.action];
-    if (!allowed.includes(input.type)) {
+    const allowed = ACTION_COMPATIBILITY[control.onChange.action];
+    if (!allowed.includes(control.type)) {
       ctx.addIssue({
         code: "custom",
-        path,
-        message: `action "${action.action}" is not allowed on input "${input.type}" (allowed: ${allowed.join(", ")})`
+        path: [...path, "onChange"],
+        message: `action "${control.onChange.action}" is not allowed on control "${control.type}" (allowed: ${allowed.join(", ")})`
       });
-      continue; // If this error occurs there's no need to check themed
-    }
-
-    // Themed specific compatibility
-    if (input.type === "color") {
-      if (input.themed && action.action !== "set-css-variable-themed") {
-        ctx.addIssue({
-          code: "custom",
-          path,
-          message: `themed color must use "set-css-variable-themed"`
-        });
-      }
-      if (!input.themed && action.action === "set-css-variable-themed") {
-        ctx.addIssue({
-          code: "custom",
-          path,
-          message: `"set-css-variable-themed" requires "themed: true" on the color input`
-        });
-      }
     }
   }
 });
@@ -357,6 +306,8 @@ const ThemeSettingsJSONSchema = z.object({
 //#endregion
 
 //#endregion
+
+//#region Parse Data
 
 // Parse and validate a settings.json against the schema
 export function parseThemeSettingsJSON(raw: unknown): ParseResult {
@@ -367,7 +318,21 @@ export function parseThemeSettingsJSON(raw: unknown): ParseResult {
   return { ok: true, data: result.data };
 }
 
-//#region Utilities
+// Parse and validate a JSON text blob against the schema
+export function parseThemeSettingsText(text: string): ParseResult {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    return { ok: false, reason: `Invalid JSON: ${message}` };
+  }
+  return parseThemeSettingsJSON(raw);
+}
+
+//#endregion
+
+//#region Color Utilities
 
 // Check that a color string matches the declared colorSpace
 function matchesColorSpace(value: string, colorSpace: ColorSpace): boolean {
