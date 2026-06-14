@@ -4,7 +4,7 @@ import { ThemePADDSettingTab } from "./ThemePADDSettingTab";
 import { ThemeStore } from "./ThemeStore";
 import { InputValue, ThemeSettings } from "./ThemeSettings";
 import { Theme } from "./Theme";
-import { ThemeSettingsJSON } from "./ThemeSettingsSchema";
+import { Control, ThemeSettingsJSON } from "./ThemeSettingsSchema";
 import { encodeKey, Scope } from "./KeyEncoding";
 
 //#region Types/Objects/Interfaces
@@ -285,8 +285,12 @@ export default class ThemePADDPlugin extends Plugin {
     for (const control of settings.allControls()) {
       switch (control.onChange.action) {
         case "set-css-variable": {
-          const value = lookupValue(control.id);
-          const decl = formatVariableDeclaration(control.onChange.name, value, control.onChange.clearMode);
+          // Get clearMode
+          const clearMode = resolveDefaultClearMode(control, control.onChange.clearMode);
+          const value = clearMode === "default"
+            ? settings.effectiveValue(control, lookupValue)
+            : lookupValue(control.id);
+          const decl = formatVariableDeclaration(control.onChange.name, value, clearMode);
           if (decl) varDeclarations.push(decl);
           break;
         }
@@ -369,17 +373,37 @@ export default class ThemePADDPlugin extends Plugin {
 
 //#region Utilities
 
-// Build variable declaraation for style element CSS
+// Build variable declaration for style element CSS
 function formatVariableDeclaration(
   name: string,
   value: InputValue | undefined,
-  clearMode: "empty" | "remove" | undefined
+  clearMode: "empty" | "remove" | "default" | undefined
 ): string | null {
   if (value === undefined) {
     if (clearMode === "empty") return `${name}: ;`;
-    return null; // either remove or default, remove completely
+    return null; // remove or default (with no resolved default value), remove completely
   }
   return `${name}: ${typeof value === "number" ? String(value) : value};`;
+}
+
+// Determine which default type is used (either "remove" or "default")
+function resolveDefaultClearMode(control: Control, initialClearMode: "remove" | "empty" | "default" | undefined): "remove" | "empty" | "default" {
+  if (initialClearMode !== undefined) return initialClearMode;
+  let hasDefaultValue = false;
+  switch (control.type) {
+    case "text":
+    case "textarea":
+    case "dropdown":
+    case "color":
+      hasDefaultValue = control.defaultValue !== undefined && control.defaultValue !== "";
+      break;
+    case "number":
+    case "slider":
+    case "toggle":
+      hasDefaultValue = control.defaultValue !== undefined;
+      break;
+  }
+  return hasDefaultValue ? "default" : "remove";
 }
 
 //#endregion

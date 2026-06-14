@@ -38,14 +38,14 @@ const ACTION_COMPATIBILITY: Record<Action["action"], readonly ControlType[]> = {
 const SetCssVariable = z.object({
   action: z.literal("set-css-variable"),
   name: z.string(),
-  clearMode: z.enum(["remove", "empty"]).optional() // defaults to "remove"
+  clearMode: z.enum(["remove", "empty", "default"]).optional() // defaults to "remove" when default value not given, otherwise "default"
 });
 
 const SetCssVariableTo = z.object({
   action: z.literal("set-css-variable-to"),
   name: z.string(),
   value: z.string(),
-  clearMode: z.enum(["remove", "empty"]).optional()// defaults to "remove"
+  clearMode: z.enum(["remove", "empty"]).optional() // defaults to "remove"
 });
 
 const ToggleClass = z.object({
@@ -300,8 +300,35 @@ const ThemeSettingsJSONSchema = z.object({
         message: `action "${control.onChange.action}" is not allowed on control "${control.type}" (allowed: ${allowed.join(", ")})`
       });
     }
+
+    // clearMode "default" requires the control to define defaultValue
+    if (control.onChange.action === "set-css-variable"
+        && control.onChange.clearMode === "default"
+        && !controlHasDefaultValue(control)) {
+      ctx.addIssue({
+        code: "custom",
+        path: [...path, "onChange", "clearMode"],
+        message: `clearMode "default" requires the control to define defaultValue`
+      });
+    }
   }
 });
+
+// Return if control has a default value set
+function controlHasDefaultValue(control: z.infer<typeof ControlSchema>): boolean {
+  switch (control.type) {
+    case "text":
+    case "textarea":
+    case "dropdown":
+    case "color":
+      return control.defaultValue !== undefined && control.defaultValue !== "";
+    case "number":
+    case "slider":
+      return control.defaultValue !== undefined;
+    case "toggle":
+      return control.defaultValue !== undefined; // not relevant for set-css-variable but kept exhaustive
+  }
+}
 
 //#endregion
 

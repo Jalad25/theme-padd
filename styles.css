@@ -1,7 +1,7 @@
 /* #region Settings Tab */
 
 /* Menu override */
-.vertical-tab-nav-item.tappable[data-setting-id="theme-padd"] {
+body:not(.is-phone) .vertical-tab-nav-item[data-setting-id="theme-padd"] {
   .vertical-tab-nav-item-icon {
     display: flex;
   }
