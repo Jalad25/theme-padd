@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/jalad25/theme-padd/releases/latest"><img src="https://img.shields.io/github/v/release/Jalad25/theme-padd?label=Latest%20Release&logo=Github" alt="GitHub release"></a>
+  <a href="https://github.com/Jalad25/theme-padd/releases/latest"><img src="https://img.shields.io/github/v/release/Jalad25/theme-padd?label=Latest%20Release&logo=Github" alt="GitHub release"></a>
 	<a href="https://community.obsidian.md/plugins/theme-padd"><img src="https://img.shields.io/badge/Obsidian-Install-7c3aed?logo=obsidian&logoColor=white"></a>
 </p>
 <p align="center">
@@ -21,12 +21,13 @@ A PADD (Palette, Animation, Decoration, and Density) modifier for your themes.
 
 ## Features
 
-- **Per-theme settings UI** — themes that opt in get their own settings panel under **Settings → Theme PADD**, with controls defined by the theme author.
-- **Multiple input types** — color pickers (hex/rgb/hsl), text, number, toggle, and dropdown selects, organized into sections.
-- **Live preview** — settings apply to the DOM immediately as you tweak them.
-- **Values persist across theme updates** — when a theme ships a new version of its settings spec, your customizations migrate forward by field id.
-- **Auto-discovery** — Theme PADD reads the `@themepadd` directive from each installed theme's `theme.css` and fetches the settings spec from the theme's GitHub release. No per-theme configuration needed.
-- **Clear error reporting** — if a theme's spec is malformed or can't be downloaded, the settings tab shows a readable error with a **Copy** button so you can share the details with the theme author.
+- **Per-theme settings UI** — Any theme that opts in gets its own page under **Settings → Theme PADD** with the controls its author exposed.
+- **Customizations layered on any theme** — Author your own controls for a specific theme. Useful when a theme doesn't ship settings, or doesn't expose the knob you want.
+- **Global customizations** — The same mechanism, but applied to the whole vault.
+- **Live preview** — Controls apply to the DOM the moment you change them.
+- **Auto-discovery** — Theme PADD reads each installed theme's `theme.css` for a `@themepadd` directive and fetches the spec from the theme's GitHub release. No per-theme setup.
+- **Version pinning** — Each theme version downloads its own `settings.json`. When a theme updates, the new spec comes with it.
+- **Clear error reporting** — If a spec can't be downloaded or is malformed, the settings tab shows a readable error with a **Copy** button.
 
 ## Installation
 
@@ -42,7 +43,7 @@ A PADD (Palette, Animation, Decoration, and Density) modifier for your themes.
 [BRAT](https://github.com/TfTHacker/obsidian42-brat) installs plugins directly from their GitHub repository and auto-updates them on each release.
 
 1. Install **BRAT** from **Settings → Community plugins → Browse** and enable it.
-2. Open the command palette (`Ctrl+P` (Windows) or `Command+P` (macOS)) and run **BRAT: Add a beta plugin for testing**.
+2. Open the command palette (`Ctrl+P` on Windows / `Command+P` on macOS) and run **BRAT: Add a beta plugin for testing**.
 3. Enter the repository URL: `https://github.com/Jalad25/theme-padd`.
 4. Choose whether to track the latest release or the latest commit, then select **Add Plugin**.
 5. Open **Settings → Community plugins** and enable **Theme PADD**.
@@ -58,8 +59,84 @@ To get future updates, run **BRAT: Check for updates to all beta plugins** from 
 
 ## Usage
 
-1. Install a theme with Theme PADD support from **Settings → Appearance → Themes**.
-2. Open **Settings → Theme PADD** and expand the theme to tweak its settings.
+Open **Settings → Theme PADD** (palette icon).
+
+### Themes that support Theme PADD
+
+Installed themes that publish a `settings.json` appear under **Themes**. Click into one to see the controls its author exposed. Changes apply live for active themes.
+
+### Themes that don't support Theme PADD
+
+Themes without a `settings.json` appear in a separate group at the bottom. You can still add your own settings to them.
+
+### Your customizations (per theme)
+
+Every theme, supported or not, has a **Your customizations** entry. This is where *you* author additional controls layered on top of the theme. They apply only while that theme is active.
+
+Click **Add custom settings** to open the JSON editor. The schema you write is the same one theme authors use. See [THEME_AUTHORING.md](THEME_AUTHORING.md) for the full reference. A copy-and-paste example is below.
+
+### Global customizations
+
+At the top of the Theme PADD settings. Same JSON editor, same schema, but applied to the whole vault.
+
+### Cascade
+
+When Theme PADD applies your settings to the vault, layers stack in this order:
+
+1. **Theme author's settings** 
+2. **Global customizations**
+3. **Your per-theme customizations** 
+
+Later layers override earlier ones when keys collide.
+
+## Customization quick example
+
+Paste this into the **Add custom settings** editor (either per-theme or global) to add a body-font-size slider:
+
+```json
+{
+  "schemaVersion": 1,
+  "settingItems": [
+    {
+      "type": "control",
+      "name": "Body font size",
+      "control": {
+        "type": "slider",
+        "id": "body-font-size",
+        "min": 12,
+        "max": 24,
+        "step": 1,
+        "defaultValue": 16,
+        "onChange": {
+          "action": "set-css-variable",
+          "name": "--font-text-size"
+        }
+      }
+    }
+  ]
+}
+```
+
+For the full schema (every control type, every action type, validation rules), see [THEME_AUTHORING.md](THEME_AUTHORING.md).
+
+## Important Notes
+
+### Errors
+
+If a theme says it supports Theme PADD but something goes wrong, Theme PADD shows a clearly labeled error on that theme's entry. There's a **Copy** button for the details, useful if you want to file an issue with the theme author.
+
+### Version pinning
+
+Each theme version's settings come from that release's `settings.json` asset. When a theme author publishes an update, Theme PADD fetches the new spec automatically. If you downgrade a theme to a version that never shipped one, you'll see a fetch error until you re-upgrade.
+
+### Uninstalling a theme
+
+When you remove a theme from Obsidian, Theme PADD cleans up alongside it:
+
+- Any control values you set in that theme's settings.
+- Any per-theme customization JSON you wrote for it.
+
+Global customizations are unaffected. If you're about to delete a theme but want to keep your customizations, copy the JSON out of the **Edit customizations** modal first.
 
 ## License
 
