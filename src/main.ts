@@ -208,7 +208,11 @@ export default class ThemePADDPlugin extends Plugin {
       else this.pluginSettings.customizations.global = null;
       await this.savePluginSettings()
         .then(() => {
-          if (this.globalSettings) this.applyThemeSettingsToDOM(this.globalSettings, { kind: "global" });
+
+          // Apply all three scopes in cascade order when there's an active theme
+          const active = this.themeStore.getActive();
+          if (active) this.applyActiveLayers(active);
+          else if (this.globalSettings) this.applyThemeSettingsToDOM(this.globalSettings, { kind: "global" });
         });
     }
   }
