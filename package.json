@@ -1,6 +1,6 @@
 {
   "name": "theme-padd",
-  "version": "0.2.0",
+  "version": "0.1.2",
   "description": "A PADD (Palette, Animation, Decoration, and Density) modifier for your themes.",
   "main": "main.js",
   "scripts": {
