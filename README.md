@@ -8,7 +8,7 @@
 </p>
 <p align="center">
   <a href="https://community.obsidian.md/plugins/theme-padd"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fobsidianmd%2Fobsidian-releases%2Fmaster%2Fcommunity-plugin-stats.json&query=%24%5B%22theme-padd%22%5D.downloads&label=Obsidian%20Downloads&color=7c3aed&logo=obsidian&logoColor=white" alt="Obsidian Downloads"></a>
-  <a href="https://github.com/jalad25/theme-padd/releases"><img src="https://img.shields.io/github/downloads/Jalad25/theme-padd/total?label=Assets%20Downloaded&logo=Github" alt="Assets downloaded"></a>
+  <a href="https://github.com/Jalad25/theme-padd/releases"><img src="https://img.shields.io/github/downloads/Jalad25/theme-padd/total?label=Assets%20Downloaded&logo=Github" alt="Assets downloaded"></a>
 </p>
 <p align="center">
 		<a href="https://community.obsidian.md/plugins/theme-padd#scorecard"><img alt="Obsidian Scorecard" src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Jalad25/theme-padd/badges/theme-padd.json"></a>
