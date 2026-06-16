@@ -1,4 +1,4 @@
-import { ButtonComponent, Modal, Setting } from "obsidian";
+import { Modal, Setting } from "obsidian";
 import ThemePADDPlugin from "./main";
 import { parseThemeSettingsText, ThemeSettingsJSON, SETTINGS_JSON_SCHEMA_VERSION } from "./ThemeSettingsSchema";
 import { ThemeSettings } from "./ThemeSettings";

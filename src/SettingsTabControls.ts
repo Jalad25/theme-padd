@@ -207,7 +207,6 @@ function renderSlider(
     component = s;
     s.setLimits(control.min, control.max, control.step);
     s.setInstant(true);
-    s.setDynamicTooltip();
     s.setValue(typeof value === "number" ? value : control.min);
     s.onChange(async (next) => {
       await write(next);

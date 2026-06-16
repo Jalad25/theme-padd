@@ -47,9 +47,12 @@ export default class ThemePADDPlugin extends Plugin {
   themeSettingsLoader: ThemeSettingsLoader = new ThemeSettingsLoader(this);
   globalSettings: ThemeSettings | null = null;
   private pluginSettingTab!: ThemePADDSettingTab;
-  private devStyleEl: HTMLStyleElement | null = null; // dev style element
-  private globalStyleEl: HTMLStyleElement | null = null; // global style element
-  private customStyleEl: HTMLStyleElement | null = null; // custom style element
+  private cssVars: Record<Scope["kind"], Map<string, string>> = { // Set CSS vars for each scope
+    dev: new Map(),
+    global: new Map(),
+    custom: new Map(),
+  };
+  private appliedCssVarNames: Set<string> = new Set(); // List of all css vars used
 
   async onload() {
     // Plugin Settings
@@ -69,9 +72,10 @@ export default class ThemePADDPlugin extends Plugin {
 
     // Load theme infomation/settings on workspace ready
     this.app.workspace.onLayoutReady(() => {
-      this.createStyleElements();
-      this.reconcileThemes();
+      void this.reconcileThemes();
     });
+
+    this.register(() => this.clearAllCssVars());
 
     // CSS Change event
     this.registerEvent(
@@ -294,7 +298,7 @@ export default class ThemePADDPlugin extends Plugin {
       return this.pluginSettings.userValues[encodeKey(scope, id)];
     };
 
-    const varDeclarations: string[] = [];
+    const scopeVars = new Map<string, string>(); // All set css vars
     for (const control of settings.allControls()) {
       switch (control.onChange.action) {
         case "set-css-variable": {
@@ -303,15 +307,15 @@ export default class ThemePADDPlugin extends Plugin {
           const value = clearMode === "default"
             ? settings.effectiveValue(control, lookupValue)
             : lookupValue(control.id);
-          const decl = formatVariableDeclaration(control.onChange.name, value, clearMode);
-          if (decl) varDeclarations.push(decl);
+          const formatted = formatCssVariableValue(value, clearMode);
+          if (formatted !== null) scopeVars.set(control.onChange.name, formatted);
           break;
         }
         case "set-css-variable-to": {
           const value = settings.effectiveValue(control, lookupValue);
           const emitted: InputValue | undefined = value === true ? control.onChange.value : undefined;
-          const decl = formatVariableDeclaration(control.onChange.name, emitted, control.onChange.clearMode);
-          if (decl) varDeclarations.push(decl);
+          const formatted = formatCssVariableValue(emitted, control.onChange.clearMode);
+          if (formatted !== null) scopeVars.set(control.onChange.name, formatted);
           break;
         }
         case "toggle-class": {
@@ -330,11 +334,15 @@ export default class ThemePADDPlugin extends Plugin {
       }
     }
 
-    this.writeStyleElement(scope, varDeclarations);
+    this.cssVars[scope.kind] = scopeVars;
+    this.applyCssVars();
   }
 
   clearThemeSettingsFromDOM(settings: ThemeSettings, scope?: Scope): void {
-    if (scope) this.writeStyleElement(scope, []);
+    if (scope) {
+      this.cssVars[scope.kind] = new Map();
+      this.applyCssVars();
+    }
     this.clearClassesFromBody(settings);
   }
 
@@ -354,30 +362,37 @@ export default class ThemePADDPlugin extends Plugin {
     }
   }
 
-  // Create style elements: dev (theme dev settings changes), global, and custom
-  private createStyleElements(): void {
-    const head = this.app.workspace.rootSplit?.doc?.head;
-    if (!head) return;
-    this.devStyleEl = head.createEl("style", { attr: { "data-theme-padd-scope": "dev" } });
-    this.globalStyleEl = head.createEl("style", { attr: { "data-theme-padd-scope": "global" } });
-    this.customStyleEl = head.createEl("style", { attr: { "data-theme-padd-scope": "custom" } });
-    this.register(() => { // Registered in order of precedence
-      this.devStyleEl?.remove();
-      this.globalStyleEl?.remove();
-      this.customStyleEl?.remove();
-      this.devStyleEl = null;
-      this.globalStyleEl = null;
-      this.customStyleEl = null;
-    });
+  // Clear variables no longer used, apply new variables (ordered dev -> global -> custom)
+  private applyCssVars(): void {
+    const body = this.app.workspace.rootSplit?.doc?.body;
+    if (!body) return;
+
+    const merged: Record<string, string> = {};
+    for (const [name, value] of this.cssVars.dev) merged[name] = value;
+    for (const [name, value] of this.cssVars.global) merged[name] = value;
+    for (const [name, value] of this.cssVars.custom) merged[name] = value;
+
+    for (const name of this.appliedCssVarNames) {
+      if (!(name in merged)) merged[name] = "";
+    }
+
+    body.setCssProps(merged);
+
+    this.appliedCssVarNames = new Set(Object.keys(merged).filter((name) => merged[name] !== ""));
   }
 
-  // Add CSS changes to style element
-  private writeStyleElement(scope: Scope, declarations: string[]): void {
-    const styleEl = scope.kind === "dev" ? this.devStyleEl
-                                         : scope.kind === "global" ? this.globalStyleEl
-                                                                   : this.customStyleEl;
-    if (!styleEl) return;
-    styleEl.textContent = declarations.length === 0 ? "" : `body {\n  ${declarations.join("\n  ")}\n}`;
+  // Clear every CSS variable applied
+  private clearAllCssVars(): void {
+    const body = this.app.workspace.rootSplit?.doc?.body;
+    if (!body) return;
+    if (this.appliedCssVarNames.size === 0) return;
+    const cleared: Record<string, string> = {};
+    for (const name of this.appliedCssVarNames) cleared[name] = "";
+    body.setCssProps(cleared);
+    this.cssVars.dev.clear();
+    this.cssVars.global.clear();
+    this.cssVars.custom.clear();
+    this.appliedCssVarNames = new Set();
   }
 
   //#endregion
@@ -386,17 +401,17 @@ export default class ThemePADDPlugin extends Plugin {
 
 //#region Utilities
 
-// Build variable declaration for style element CSS
-function formatVariableDeclaration(
-  name: string,
+// Build variable value for body
+function formatCssVariableValue(
   value: InputValue | undefined,
   clearMode: "empty" | "remove" | "default" | undefined
 ): string | null {
   if (value === undefined) {
-    if (clearMode === "empty") return `${name}: ;`;
+    if (clearMode === "empty") return "";
     return null; // remove or default (with no resolved default value), remove completely
   }
-  return `${name}: ${typeof value === "number" ? String(value) : value};`;
+  if (typeof value === "boolean") return null;
+  return typeof value === "number" ? String(value) : value;
 }
 
 // Determine which default type is used (either "remove" or "default")

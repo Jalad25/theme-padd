@@ -113,7 +113,7 @@ export class ThemePADDSettingTab extends PluginSettingTab {
     const desc = activeDocument.createDocumentFragment();
     desc.createSpan({ text: schemaVersion });
     desc.createEl("br")
-    desc.createEl("a", { text: "Visit github repository", href: "https://github.com/Jalad25/theme-padd" });
+    desc.createEl("a", { text: "Visit GitHub repository", href: "https://github.com/Jalad25/theme-padd" });
     new Setting(containerEl)
       .setName(pluginVersion)
       .setDesc(desc)
@@ -287,7 +287,7 @@ export class ThemePADDSettingTab extends PluginSettingTab {
          .onClick(() => this.deleteCustomizationSettings(scope));
         // setDestructive was added in 1.13.0, older versions use the deprecated setWarning
         if (requireApiVersion(OBSIDIAN_VERSION_DECLARATIVE_SETTINGS)) b.setDestructive();
-        else b.setWarning();
+        else b.setDestructive().setCta();
       });
   }
 
@@ -366,7 +366,7 @@ export class ThemePADDSettingTab extends PluginSettingTab {
     const desc = activeDocument.createDocumentFragment();
     desc.createSpan({ text: schemaVersion });
     desc.createEl("br");
-    desc.createEl("a", { text: "Visit github repository", href: "https://github.com/Jalad25/theme-padd" });
+    desc.createEl("a", { text: "Visit GitHub repository", href: "https://github.com/Jalad25/theme-padd" });
     items.push({
       type: "group",
       heading: "",
@@ -433,7 +433,7 @@ export class ThemePADDSettingTab extends PluginSettingTab {
     }
 
     // Added to separate it from other settings
-    items.push({ type: "group", name: " " });
+    items.push({ type: "group", heading: " " });
 
     /* Page items */
     if (errors) { // Errors
@@ -460,7 +460,7 @@ export class ThemePADDSettingTab extends PluginSettingTab {
       type: "page",
       name: theme.name,
       desc,
-      items: items,
+      items: items
     };
   }
   
@@ -507,7 +507,7 @@ export class ThemePADDSettingTab extends PluginSettingTab {
     items.push({
       name: "Delete customizations",
       desc: `Remove all customizations for ${scope.kind === "custom" ? "this theme." : "the global settings."}`,
-      action: () => this.deleteCustomizationSettings(scope),
+      action: () => { void this.deleteCustomizationSettings(scope); },
     });
     
     return {
@@ -592,7 +592,7 @@ export class ThemePADDSettingTab extends PluginSettingTab {
 
     // Force the settings window to re-navigate to the tab's root view
     if (requireApiVersion(OBSIDIAN_VERSION_DECLARATIVE_SETTINGS)) {
-      const setting = (this.app as any).setting;
+      const setting = (this.app as App & { setting?: { openTabById?: (id: string) => void } }).setting;
       if (setting?.openTabById) setting.openTabById("theme-padd");
     }
   }
