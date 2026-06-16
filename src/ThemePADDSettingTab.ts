@@ -419,16 +419,12 @@ export class ThemePADDSettingTab extends PluginSettingTab {
     const devScope: Scope = { kind: "dev", themeName: theme.name };
     const items: SettingDefinitionItem[] = [];
 
-    // Define pills summary shown next to the theme name
-    const desc = activeDocument.createDocumentFragment();
-    const parts: { text: string; cls: string }[] = [];
-    if (theme.isActive) parts.push({ text: "Active", cls: "theme-padd-theme-pill theme-padd-theme-pill-success" });
-    if (theme.isUnsupported) parts.push({ text: "Dev unsupported", cls: "theme-padd-theme-pill theme-padd-theme-pill-warning" });
-    if (theme.loadError || theme.settingsError) parts.push({ text: "Error", cls: "theme-padd-theme-pill theme-padd-theme-pill-error" });
-    parts.forEach((p, i) => {
-      if (i > 0) desc.appendText(" · ");
-      desc.createSpan({ text: p.text, cls: p.cls });
-    });
+    // Define labels summary shown next to the theme name
+    const descParts: string[] = [];
+    if (theme.isActive) descParts.push("Active");
+    if (theme.isUnsupported) descParts.push("Dev unsupported");
+    if (theme.loadError || theme.settingsError) descParts.push("Error");
+    const desc = descParts.join(" · ");
 
     // Customization settings
     const customizationSettings = this.customizationSection({ kind: "custom", themeName: theme.name });
