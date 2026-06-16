@@ -138,6 +138,10 @@ When you remove a theme from Obsidian, Theme PADD cleans up alongside it:
 
 Global customizations are unaffected. If you're about to delete a theme but want to keep your customizations, copy the JSON out of the **Edit customizations** modal first.
 
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for current focus and planned features.
+
 ## License
 
 GNU Affero General Public License v3.0. See [LICENSE](LICENSE) for details.
