@@ -2,7 +2,7 @@
   "id": "theme-padd",
   "name": "Theme PADD",
   "version": "0.2.1",
-  "minAppVersion": "1.13.1",
+  "minAppVersion": "1.12.7",
   "description": "A PADD (Palette, Animation, Decoration, and Density) modifier for your themes.",
   "author": "Jalad",
   "authorUrl": "https://jalad.ncc-1701.enterprises",
