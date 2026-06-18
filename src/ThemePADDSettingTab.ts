@@ -18,12 +18,6 @@ import { ThemeLoadError } from "./ThemeSettingsLoader";
 import { EditCustomizationModal } from "./EditCustomizationModal";
 import { renderControl } from "./SettingsTabControls";
 
-//#region Constants
-
-const OBSIDIAN_VERSION_DECLARATIVE_SETTINGS = "1.13.0";
-
-//#endregion
-
 //#region Types/Objects/Interfaces
 
 type ThemeGroup = {
@@ -49,7 +43,7 @@ export class ThemePADDSettingTab extends PluginSettingTab {
   }
 
   refresh(): void {
-    if (requireApiVersion(OBSIDIAN_VERSION_DECLARATIVE_SETTINGS)) this.update(); // Declarative settings
+    if (requireApiVersion("1.13.0")) this.update(); // Declarative settings
     else if (this.containerEl.isShown()) this.display(); // Legacy settings
   }
 
@@ -286,8 +280,7 @@ export class ThemePADDSettingTab extends PluginSettingTab {
          .setTooltip("Delete customization JSON")
          .onClick(() => this.deleteCustomizationSettings(scope));
         // setDestructive was added in 1.13.0, older versions use the deprecated setWarning
-        if (requireApiVersion(OBSIDIAN_VERSION_DECLARATIVE_SETTINGS)) b.setDestructive();
-        else b.setDestructive().setCta();
+        if (requireApiVersion("1.13.0")) b.setDestructive();
       });
   }
 
@@ -591,7 +584,7 @@ export class ThemePADDSettingTab extends PluginSettingTab {
     this.refresh(); // Update
 
     // Force the settings window to re-navigate to the tab's root view
-    if (requireApiVersion(OBSIDIAN_VERSION_DECLARATIVE_SETTINGS)) {
+    if (requireApiVersion("1.13.0")) {
       const setting = (this.app as App & { setting?: { openTabById?: (id: string) => void } }).setting;
       if (setting?.openTabById) setting.openTabById("theme-padd");
     }
